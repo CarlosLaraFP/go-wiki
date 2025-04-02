@@ -16,6 +16,7 @@ import "fmt"
 type Storage interface {
 	Put(key, value string)
 	Get(key string) (string, bool)
+	Delete(key string) bool
 }
 
 type MemoryStorage struct {
@@ -31,23 +32,39 @@ func (m *MemoryStorage) Get(key string) (string, bool) {
 	return value, exists
 }
 
+func (m *MemoryStorage) Delete(key string) bool {
+	if _, exists := m.cache[key]; exists {
+		delete(m.cache, key)
+		return true
+	}
+	return false
+}
+
 type LoggingStorage struct {
 	storage Storage
 }
 
 func (l *LoggingStorage) Put(key, value string) {
 	l.storage.Put(key, value)
-	fmt.Printf("%s: %s\n", key, value)
+	fmt.Printf("[PUT] key=%q value=%q\n", key, value)
 }
 
 func (l *LoggingStorage) Get(key string) (string, bool) {
 	value, exists := l.storage.Get(key)
 	if exists {
-		fmt.Printf("Value: %s\n", value)
+		fmt.Printf("[GET] value: %s\n", value)
 	} else {
 		fmt.Printf("Key '%s' does not exist\n", key)
 	}
 	return value, exists
+}
+
+func (l *LoggingStorage) Delete(key string) {
+	if l.storage.Delete(key) {
+		fmt.Printf("Key '%s' successfully deleted", key)
+	} else {
+		fmt.Printf("Key '%s' does not exist", key)
+	}
 }
 
 // When the parameter is an interface, it automatically expects a pointer
