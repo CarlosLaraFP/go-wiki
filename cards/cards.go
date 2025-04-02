@@ -1,6 +1,8 @@
 package cards
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type Card struct {
 	Number  int
@@ -8,10 +10,14 @@ type Card struct {
 	IsJoker bool
 }
 
-var types = [4]string{"hearts", "spades", "diamonds", "tulips"}
+type Deck struct {
+	Cards []Card
+}
+
+var types = [4]string{"Hearts", "Spades", "Diamonds", "Tulips"}
 
 // NewDeck returns a new deck of cards
-func NewDeck(log bool) []Card {
+func NewDeck(log bool) Deck {
 	deck := make([]Card, 0)
 	isJoker := false
 
@@ -28,10 +34,20 @@ func NewDeck(log bool) []Card {
 				IsJoker: isJoker,
 			})
 			if log {
-				fmt.Printf("%v of %s | joker: %v\n", deck[i].Number, deck[i].Type, deck[i].IsJoker)
+				fmt.Printf("%v of %s | Joker: %v\n", deck[i].Number, deck[i].Type, deck[i].IsJoker)
 			}
 		}
 	}
+	return Deck{Cards: deck}
+}
 
-	return deck
+// Deal pops 1 element from the stop of the deck FIFO stack (O(1))
+func (deck *Deck) Deal() *Card {
+	if len(deck.Cards) == 0 {
+		fmt.Println("Deck is empty. Game over.")
+		return nil
+	}
+	top := &deck.Cards[len(deck.Cards)-1]
+	deck.Cards = deck.Cards[:len(deck.Cards)-1]
+	return top
 }
