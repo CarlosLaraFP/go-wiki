@@ -13,26 +13,26 @@ package storage
 
 import "fmt"
 
-type Storage interface {
-	Put(key, value string)
-	Get(key string) (string, bool)
+type Storage[T any] interface {
+	Put(key string, value T)
+	Get(key string) (T, bool)
 	Delete(key string) bool
 }
 
-type MemoryStorage struct {
-	cache map[string]string
+type MemoryStorage[T any] struct {
+	cache map[string]T
 }
 
-func (m *MemoryStorage) Put(key, value string) {
+func (m *MemoryStorage[T]) Put(key string, value T) {
 	m.cache[key] = value
 }
 
-func (m *MemoryStorage) Get(key string) (string, bool) {
+func (m *MemoryStorage[T]) Get(key string) (T, bool) {
 	value, exists := m.cache[key]
 	return value, exists
 }
 
-func (m *MemoryStorage) Delete(key string) bool {
+func (m *MemoryStorage[T]) Delete(key string) bool {
 	if _, exists := m.cache[key]; exists {
 		delete(m.cache, key)
 		return true
@@ -40,26 +40,26 @@ func (m *MemoryStorage) Delete(key string) bool {
 	return false
 }
 
-type LoggingStorage struct {
-	storage Storage
+type LoggingStorage[T any] struct {
+	storage Storage[T]
 }
 
-func (l *LoggingStorage) Put(key, value string) {
+func (l *LoggingStorage[T]) Put(key string, value T) {
 	l.storage.Put(key, value)
-	fmt.Printf("[PUT] key=%q value=%q\n", key, value)
+	fmt.Printf("[PUT] key=%s value=%v\n", key, value)
 }
 
-func (l *LoggingStorage) Get(key string) (string, bool) {
+func (l *LoggingStorage[T]) Get(key string) (T, bool) {
 	value, exists := l.storage.Get(key)
 	if exists {
-		fmt.Printf("[GET] value: %s\n", value)
+		fmt.Printf("[GET] value: %v\n", value)
 	} else {
 		fmt.Printf("Key '%s' does not exist\n", key)
 	}
 	return value, exists
 }
 
-func (l *LoggingStorage) Delete(key string) {
+func (l *LoggingStorage[T]) Delete(key string) {
 	if l.storage.Delete(key) {
 		fmt.Printf("Key '%s' successfully deleted", key)
 	} else {
@@ -68,7 +68,7 @@ func (l *LoggingStorage) Delete(key string) {
 }
 
 // When the parameter is an interface, it automatically expects a pointer
-func New(storage Storage) *LoggingStorage {
-	l := LoggingStorage{storage}
+func New[T any](storage Storage[T]) *LoggingStorage[T] {
+	l := LoggingStorage[T]{storage}
 	return &l
 }

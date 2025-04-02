@@ -5,7 +5,7 @@ import (
 )
 
 func TestStorage(t *testing.T) {
-	ms := &MemoryStorage{cache: make(map[string]string)}
+	ms := &MemoryStorage[string]{cache: make(map[string]string)}
 	ms.Put("hello", "world")
 	_, exists := ms.Get("hello")
 	if !exists {

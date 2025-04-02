@@ -4,6 +4,11 @@ import (
 	"fmt"
 )
 
+type Stack[T any] interface {
+	Push(v T)
+	Pop() *T
+}
+
 type Card struct {
 	Number  int
 	Type    string
