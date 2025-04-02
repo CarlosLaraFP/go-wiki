@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"html/template"
@@ -76,7 +76,8 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.Handl
 	}
 }
 
-func main() {
+// Serve starts the Go http server
+func Serve() {
 	http.HandleFunc("/view/", makeHandler(viewHandler))
 	http.HandleFunc("/edit/", makeHandler(editHandler))
 	http.HandleFunc("/save/", makeHandler(saveHandler))
@@ -86,3 +87,4 @@ func main() {
 
 // go build wiki.go
 // ./wiki
+// http://localhost:8080/edit/NewPage
