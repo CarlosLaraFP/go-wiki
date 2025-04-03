@@ -37,10 +37,11 @@ type Card struct {
 	IsJoker bool
 }
 
-type Cards Stack[Card]
+// note type alias vs a defined type (type Cards Stack[Card])
+type Cards = Stack[Card]
 
 type Deck struct {
-	Stack[Card]
+	Cards
 }
 
 // Deal pops 1 element from the stop of the deck FIFO stack (O(1))
@@ -53,10 +54,6 @@ func (deck *Deck) Discard() {
 	if card := deck.Pop(); card != nil {
 		deck.PushBottom(*card)
 	}
-}
-
-func (deck *Deck) Size() int {
-	return len(deck.elements)
 }
 
 var types = [4]string{"Hearts", "Spades", "Diamonds", "Clubs"}
