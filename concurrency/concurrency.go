@@ -3,17 +3,17 @@ package concurrency
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
 
 func CheckURL(url string, ch chan string) {
-	var status string
 	defer func() {
-		ch <- status
+		time.Sleep(5 * time.Second)
+		ch <- url
 	}()
-	_, err := http.Get(url)
-	if err != nil {
-		status = fmt.Sprintf("%s is unresponsive...", url)
+	if _, err := http.Get(url); err != nil {
+		fmt.Printf("%s is unresponsive...\n", url)
 		return
 	}
-	status = fmt.Sprintf("%s is live", url)
+	fmt.Printf("%s is live\n", url)
 }

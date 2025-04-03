@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fmt"
-	"go-wiki/concurrency"
+	c "go-wiki/concurrency"
 )
 
 func main() {
@@ -17,11 +16,11 @@ func main() {
 	ch := make(chan string, len(urls))
 
 	for _, url := range urls {
-		go concurrency.CheckURL(url, ch)
+		go c.CheckURL(url, ch)
 	}
-
-	for range urls {
-		fmt.Println(<-ch)
+	// for each iteration, wait to receive a value from the channel
+	for url := range ch {
+		go c.CheckURL(url, ch)
 	}
 
 	//web.Serve()
