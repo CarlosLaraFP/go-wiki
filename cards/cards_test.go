@@ -26,11 +26,8 @@ func TestNewDeck(t *testing.T) {
 	}
 	deck.Show()
 
-	hand, err := deck.Hand(5)
-	if err != nil {
-		t.Fail()
-	}
-	if deck.Size() != 46 && hand.Size() != 5 {
+	hand, err := deck.Deal(5)
+	if err != nil || (deck.Size() != 46 && len(hand) != 5) {
 		t.Fail()
 	}
 }

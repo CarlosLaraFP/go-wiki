@@ -41,6 +41,8 @@ type Card struct {
 	IsJoker bool
 }
 
+type Hand []Card
+
 // note type alias vs a new, distinct type (type Cards Stack[Card])
 type Cards = Stack[Card]
 
@@ -49,19 +51,19 @@ type Deck struct {
 	Cards
 }
 
-// Hand returns the top n cards from the deck
-func (d *Deck) Hand(n int) (*Cards, error) {
-	var hand Cards
+// Deal returns the top n cards from the deck as a Hand
+func (d *Deck) Deal(handSize int) (Hand, error) {
+	var hand Hand
 
-	for range n {
+	for range handSize {
 		card := d.Hit()
 		if card == nil {
 			return nil, fmt.Errorf("not enough cards left in deck to deal a full hand")
 		}
-		hand.PushTop(*card)
+		hand = append(hand, *card)
 	}
 
-	return &hand, nil
+	return hand, nil
 }
 
 // Deal pops 1 element from the stop of the deck FIFO stack (O(1))
