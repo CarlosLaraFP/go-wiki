@@ -1,21 +1,26 @@
 package cards
 
 import (
+	"fmt"
 	"testing"
 )
 
 func TestNewDeck(t *testing.T) {
 	deck := NewDeck(true)
-	if len(deck.Cards) != 40 {
-		t.Errorf("Deck should contain 40 cards")
+	if deck.Size() != 52 {
+		t.Errorf("Deck should contain 52 cards")
 	}
 
 	card := deck.Deal()
-	if card.Number != 9 && card.Type != "Hearts" && card.IsJoker {
+	if card.Number != 13 && card.Type != "Clubs" {
 		t.Errorf("Deal() did not pop the stack correctly: %v\n", card)
 	}
+	fmt.Printf("%v/n", card)
 
-	if len(deck.Cards) != 39 {
-		t.Errorf("Deck should contain 39 cards")
+	if deck.Size() != 51 {
+		t.Errorf("Deck should contain 51 cards")
 	}
+
+	deck.Discard()
+
 }
