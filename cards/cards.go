@@ -43,7 +43,7 @@ type Card struct {
 
 type Hand []Card
 
-// note type alias vs a new, distinct type (type Cards Stack[Card])
+// note type alias vs a new, distinct type
 type Cards = Stack[Card]
 
 // if Cards were a new type, only the methods defined specifically for the new type would be promoted to the parent struct
@@ -66,12 +66,13 @@ func (d *Deck) Deal(handSize int) (Hand, error) {
 	return hand, nil
 }
 
-// Deal pops 1 element from the stop of the deck FIFO stack (O(1))
+// Deal pops 1 element from the stop of the deck FIFO stack (O(1) time complexity).
 func (d *Deck) Hit() *Card {
 	return d.Pop()
 }
 
-// Discard pops and pushes to the bottom
+// Discard pops and pushes to the bottom (O(N) time complexity).
+// Maintaining a secondary Deck would make Discard O(1) time complexity.
 func (d *Deck) Discard() {
 	if card := d.Pop(); card != nil {
 		d.PushBottom(*card)

@@ -2,11 +2,28 @@ package main
 
 import (
 	"fmt"
-	//"go-wiki/web"
+	"go-wiki/concurrency"
 )
 
 func main() {
-	fmt.Println("Hello World")
+	urls := []string{
+		"http://google.com",
+		"http://facebook.com",
+		"http://golang.org",
+		"http://amazon.com",
+		"fake",
+	}
+
+	ch := make(chan string, len(urls))
+
+	for _, url := range urls {
+		go concurrency.CheckURL(url, ch)
+	}
+
+	for range urls {
+		fmt.Println(<-ch)
+	}
+
 	//web.Serve()
 }
 
