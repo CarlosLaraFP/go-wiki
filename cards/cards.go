@@ -22,13 +22,17 @@ func (s *Stack[T]) PushTop(element T) {
 }
 
 func (s *Stack[T]) PushBottom(element T) {
-	deck := make([]T, 0)
-	deck = append(deck, element)
-	s.elements = append(deck, s.elements...)
+	s.elements = append([]T{element}, s.elements...)
 }
 
 func (s *Stack[T]) Size() int {
 	return len(s.elements)
+}
+
+func (s *Stack[T]) Show() {
+	for i := s.Size() - 1; i >= 0; i-- {
+		fmt.Printf("%v\n", s.elements[i])
+	}
 }
 
 type Card struct {
@@ -37,22 +41,38 @@ type Card struct {
 	IsJoker bool
 }
 
-// note type alias vs a defined type (type Cards Stack[Card])
+// note type alias vs a new, distinct type (type Cards Stack[Card])
 type Cards = Stack[Card]
 
+// if Cards were a new type, only the methods defined specifically for the new type would be promoted to the parent struct
 type Deck struct {
 	Cards
 }
 
+// Hand returns the top n cards from the deck
+func (d *Deck) Hand(n int) (*Cards, error) {
+	var hand Cards
+
+	for range n {
+		card := d.Hit()
+		if card == nil {
+			return nil, fmt.Errorf("not enough cards left in deck to deal a full hand")
+		}
+		hand.PushTop(*card)
+	}
+
+	return &hand, nil
+}
+
 // Deal pops 1 element from the stop of the deck FIFO stack (O(1))
-func (deck *Deck) Deal() *Card {
-	return deck.Pop()
+func (d *Deck) Hit() *Card {
+	return d.Pop()
 }
 
 // Discard pops and pushes to the bottom
-func (deck *Deck) Discard() {
-	if card := deck.Pop(); card != nil {
-		deck.PushBottom(*card)
+func (d *Deck) Discard() {
+	if card := d.Pop(); card != nil {
+		d.PushBottom(*card)
 	}
 }
 
