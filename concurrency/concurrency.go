@@ -34,9 +34,9 @@ func LaunchWorkerPool(fileNames []string, n int) {
 	wg := &sync.WaitGroup{}
 	c := make(chan string)
 
-	for range n {
+	for i := range n {
 		wg.Add(1)
-		go func() {
+		go func(id int) {
 			defer wg.Done() // avoids deadlock even if the goroutine fails
 			/*
 				If the channel is open but empty → the read blocks (waits for producer to send).
@@ -46,9 +46,9 @@ func LaunchWorkerPool(fileNames []string, n int) {
 			*/
 			for fn := range c {
 				time.Sleep(100 * time.Millisecond)
-				fmt.Printf("processed %s\n", fn)
+				fmt.Printf("worker pool %d processed %s\n", id, fn)
 			}
-		}()
+		}(i)
 	}
 
 	for _, n := range fileNames {

@@ -14,7 +14,7 @@ func main() {
 		"fake",
 	}
 
-	c.LaunchWorkerPool([]string{"1.txt", "2.txt", "3.txt"})
+	c.LaunchWorkerPool([]string{"1.txt", "2.txt", "3.txt"}, 3)
 
 	time.Sleep(30 * time.Second)
 
