@@ -2,6 +2,7 @@ package main
 
 import (
 	c "go-wiki/concurrency"
+	"time"
 )
 
 func main() {
@@ -12,6 +13,10 @@ func main() {
 		"http://amazon.com",
 		"fake",
 	}
+
+	c.LaunchWorkerPool([]string{"1.txt", "2.txt", "3.txt"})
+
+	time.Sleep(30 * time.Second)
 
 	ch := make(chan string, len(urls))
 

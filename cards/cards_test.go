@@ -4,21 +4,17 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewDeck(t *testing.T) {
 	deck := NewDeck(false)
-	if deck.Size() != 52 {
-		t.Errorf("Deck should contain 52 cards")
-	}
+	assert.Equal(t, 52, deck.Size())
 	bottom := Card{Number: 1, Type: types[0]}
-	if deck.Cards.Elements[0] != bottom {
-		t.Errorf("bottom card should be ace of hearts")
-	}
+	assert.Equal(t, bottom, deck.Cards.Elements[0])
 	top := Card{Number: 13, Type: types[len(types)-1]}
-	if deck.Cards.Elements[len(deck.Cards.Elements)-1] != top {
-		t.Errorf("top card should be king of clubs")
-	}
+	assert.Equal(t, top, deck.Cards.Elements[len(deck.Cards.Elements)-1])
 }
 
 func TestHit(t *testing.T) {
@@ -57,14 +53,14 @@ func TestDeal(t *testing.T) {
 	}
 }
 
-func TestSave_Load(t *testing.T) {
+func TestSaveAndLoad(t *testing.T) {
 	deck := NewDeck(false)
 
 	if err := deck.Save(FilePath); err != nil {
 		t.Errorf("failed to Save Deck: %v", err)
 	}
 
-	if deck, err := LoadDeck(FilePath); err != nil {
+	if deck, err := Load(FilePath); err != nil {
 		t.Errorf("failed to Load Deck: %v", err)
 
 		if deck.Size() != 52 {

@@ -118,7 +118,7 @@ func (d *Deck) Save(path string) error {
 	return nil
 }
 
-func LoadDeck(path string) (*Deck, error) {
+func Load(path string) (*Deck, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %v", err)
