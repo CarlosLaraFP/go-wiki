@@ -2,6 +2,7 @@ package cards
 
 import (
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -30,4 +31,20 @@ func TestNewDeck(t *testing.T) {
 	if err != nil || (deck.Size() != 46 && len(hand) != 5) {
 		t.Fail()
 	}
+
+	if err = deck.Save(FilePath); err != nil {
+		t.Errorf("failed to Save Deck: %v", err)
+	}
+
+	if deck, err := LoadDeck(FilePath); err != nil {
+		t.Errorf("failed to Load Deck: %v", err)
+
+		if deck.Size() != 46 {
+			t.Errorf("expected %d cards; loaded %d", 46, deck.Size())
+		}
+	}
+
+	t.Cleanup(func() {
+		os.Remove(FilePath)
+	})
 }

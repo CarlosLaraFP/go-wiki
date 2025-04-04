@@ -1,44 +1,46 @@
 package cards
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 )
 
 type Stack[T any] struct {
-	elements []T
+	Elements []T `json:"elements"`
 }
 
 func (s *Stack[T]) Pop() *T {
-	if len(s.elements) == 0 {
+	if len(s.Elements) == 0 {
 		return nil
 	}
-	top := &s.elements[len(s.elements)-1]
-	s.elements = s.elements[:len(s.elements)-1]
+	top := &s.Elements[len(s.Elements)-1]
+	s.Elements = s.Elements[:len(s.Elements)-1]
 	return top
 }
 
 func (s *Stack[T]) PushTop(element T) {
-	s.elements = append(s.elements, element)
+	s.Elements = append(s.Elements, element)
 }
 
 func (s *Stack[T]) PushBottom(element T) {
-	s.elements = append([]T{element}, s.elements...)
+	s.Elements = append([]T{element}, s.Elements...)
 }
 
 func (s *Stack[T]) Size() int {
-	return len(s.elements)
+	return len(s.Elements)
 }
 
 func (s *Stack[T]) Show() {
 	for i := s.Size() - 1; i >= 0; i-- {
-		fmt.Printf("%v\n", s.elements[i])
+		fmt.Printf("%v\n", s.Elements[i])
 	}
 }
 
 type Card struct {
-	Number  int
-	Type    string
-	IsJoker bool
+	Number  int    `json:"number"`
+	Type    string `json:"type"`
+	IsJoker bool   `json:"isJoker,omitempty"`
 }
 
 type Hand []Card
@@ -48,7 +50,7 @@ type Cards = Stack[Card]
 
 // if Cards were a new type, only the methods defined specifically for the new type would be promoted to the parent struct
 type Deck struct {
-	Cards
+	Cards `json:"cards"`
 }
 
 // Deal returns the top n cards from the deck as a Hand
@@ -79,6 +81,38 @@ func (d *Deck) Discard() {
 	}
 }
 
+func (d *Deck) Save(path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("error creating OS file %v", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", " ")
+	if err := encoder.Encode(d); err != nil {
+		return fmt.Errorf("error writing JSON to file %v", err)
+	}
+	return nil
+}
+
+func LoadDeck(path string) (*Deck, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %v", err)
+	}
+	defer file.Close()
+
+	deck := Deck{}
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&deck); err != nil {
+		return nil, fmt.Errorf("failed to read JSON from %v", err)
+	}
+	return &deck, nil
+}
+
+const FilePath = "deck.json"
+
 var types = [4]string{"Hearts", "Spades", "Diamonds", "Clubs"}
 
 // NewDeck returns a new deck of cards
@@ -96,5 +130,5 @@ func NewDeck(log bool) Deck {
 			}
 		}
 	}
-	return Deck{Stack[Card]{elements: deck}}
+	return Deck{Stack[Card]{Elements: deck}}
 }
