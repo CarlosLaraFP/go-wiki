@@ -44,6 +44,13 @@ func TestNewDeck(t *testing.T) {
 		}
 	}
 
+	fmt.Println("Shuffling deck...")
+	deck.Shuffle()
+	deck.Show()
+	if deck.Size() != 46 {
+		t.Errorf("expected %d cards; shuffle result %d", 46, deck.Size())
+	}
+
 	t.Cleanup(func() {
 		os.Remove(FilePath)
 	})

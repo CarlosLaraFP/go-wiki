@@ -3,6 +3,7 @@ package cards
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 )
 
@@ -25,6 +26,12 @@ func (s *Stack[T]) PushTop(element T) {
 
 func (s *Stack[T]) PushBottom(element T) {
 	s.Elements = append([]T{element}, s.Elements...)
+}
+
+func (s *Stack[T]) Shuffle() {
+	rand.Shuffle(s.Size(), func(i, j int) {
+		s.Elements[i], s.Elements[j] = s.Elements[j], s.Elements[i]
+	})
 }
 
 func (s *Stack[T]) Size() int {
@@ -68,7 +75,7 @@ func (d *Deck) Deal(handSize int) (Hand, error) {
 	return hand, nil
 }
 
-// Deal pops 1 element from the stop of the deck FIFO stack (O(1) time complexity).
+// Deal pops 1 element from the stop of the deck LIFO stack (O(1) time complexity).
 func (d *Deck) Hit() *Card {
 	return d.Pop()
 }
