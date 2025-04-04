@@ -11,8 +11,12 @@ func TestNewDeck(t *testing.T) {
 	if deck.Size() != 52 {
 		t.Errorf("Deck should contain 52 cards")
 	}
+}
 
+func TestHit(t *testing.T) {
+	deck := NewDeck(false)
 	card := deck.Hit()
+
 	if card.Number != 13 && card.Type != "Clubs" {
 		t.Errorf("Deal() did not pop the stack correctly: %v\n", card)
 	}
@@ -20,38 +24,52 @@ func TestNewDeck(t *testing.T) {
 	if deck.Size() != 51 {
 		t.Errorf("Deck should contain 51 cards")
 	}
+}
 
+func TestDiscard(t *testing.T) {
+	deck := NewDeck(false)
 	deck.Discard()
-	if deck.Size() != 51 {
-		t.Errorf("Deck should still contain 51 cards")
+	if deck.Size() != 52 {
+		t.Errorf("Deck should still contain 52 cards")
 	}
 	deck.Show()
+}
 
-	hand, err := deck.Deal(5)
-	if err != nil || (deck.Size() != 46 && len(hand) != 5) {
-		t.Fail()
+func TestDeal(t *testing.T) {
+	deck := NewDeck(false)
+	if hand, err := deck.Deal(5); err != nil || (deck.Size() != 47 && len(hand) != 5) {
+		t.Errorf("Deal method failed")
+		deck.Show()
 	}
+}
 
-	if err = deck.Save(FilePath); err != nil {
+func TestSave_Load(t *testing.T) {
+	deck := NewDeck(false)
+
+	if err := deck.Save(FilePath); err != nil {
 		t.Errorf("failed to Save Deck: %v", err)
 	}
 
 	if deck, err := LoadDeck(FilePath); err != nil {
 		t.Errorf("failed to Load Deck: %v", err)
 
-		if deck.Size() != 46 {
-			t.Errorf("expected %d cards; loaded %d", 46, deck.Size())
+		if deck.Size() != 52 {
+			t.Errorf("expected %d cards; loaded %d", 52, deck.Size())
 		}
-	}
-
-	fmt.Println("Shuffling deck...")
-	deck.Shuffle()
-	deck.Show()
-	if deck.Size() != 46 {
-		t.Errorf("expected %d cards; shuffle result %d", 46, deck.Size())
 	}
 
 	t.Cleanup(func() {
 		os.Remove(FilePath)
 	})
+}
+
+func TestShuffle(t *testing.T) {
+	deck := NewDeck(false)
+	deck.Show()
+	deck.Shuffle()
+	fmt.Println("Shuffled")
+	deck.Show()
+	if deck.Size() != 52 {
+		t.Errorf("expected %d cards; shuffle result %d", 52, deck.Size())
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"time"
 )
 
 type Stack[T any] struct {
@@ -28,10 +29,19 @@ func (s *Stack[T]) PushBottom(element T) {
 	s.Elements = append([]T{element}, s.Elements...)
 }
 
+/*
+Go caches test results by code + input (not by time).
+If the test code and input are the same, Go skips re-execution and returns the cached result.
+time.Now() Doesn’t Bypass Caching. Even though time.Now() changes, Go does not consider it a test input change.
+Only actual code changes (like adding fmt.Println) invalidate the cache.
+go test ./... -v -count=1
+*/
 func (s *Stack[T]) Shuffle() {
-	rand.Shuffle(s.Size(), func(i, j int) {
-		s.Elements[i], s.Elements[j] = s.Elements[j], s.Elements[i]
-	})
+	rand.
+		New(rand.NewSource(time.Now().UnixNano())).
+		Shuffle(s.Size(), func(i, j int) {
+			s.Elements[i], s.Elements[j] = s.Elements[j], s.Elements[i]
+		})
 }
 
 func (s *Stack[T]) Size() int {
@@ -50,9 +60,10 @@ type Card struct {
 	IsJoker bool   `json:"isJoker,omitempty"`
 }
 
+// new, distinct type
 type Hand []Card
 
-// note type alias vs a new, distinct type
+// type alias
 type Cards = Stack[Card]
 
 // if Cards were a new type, only the methods defined specifically for the new type would be promoted to the parent struct
