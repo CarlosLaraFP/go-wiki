@@ -54,6 +54,10 @@ func (s *Stack[T]) Show() {
 	}
 }
 
+const FilePath = "deck.json"
+
+var types = [4]string{"Hearts", "Spades", "Diamonds", "Clubs"}
+
 type Card struct {
 	Number  int    `json:"number"`
 	Type    string `json:"type"`
@@ -128,10 +132,6 @@ func LoadDeck(path string) (*Deck, error) {
 	}
 	return &deck, nil
 }
-
-const FilePath = "deck.json"
-
-var types = [4]string{"Hearts", "Spades", "Diamonds", "Clubs"}
 
 // NewDeck returns a new deck of cards
 func NewDeck(log bool) Deck {
