@@ -21,18 +21,29 @@ func TestNewTopic(t *testing.T) {
 func TestSend(t *testing.T) {
 	topic, _ := NewTopic[string](5, 3)
 	wg.Add(1)
-	topic.Send("Hello Kafka!")
+	topic.Send("12345", "Hello Kafka!")
 	wg.Wait()
 }
 
 func TestSendMessages(t *testing.T) {
 	clear(Topics)
-	_, exists := Topics[4]
+	id := 4
+	m := []string{"12345", "67890", "555550"}
+
+	_, exists := Topics[id]
 	assert.Equal(t, false, exists)
 
-	fmt.Println("Sending random messages...")
-	SendMessages(4, 3)
+	fmt.Println("Sending user messages...")
+	SendMessages(id, m)
 
-	_, exists = Topics[4]
+	_, exists = Topics[id]
 	assert.Equal(t, true, exists)
+}
+
+func TestPartitionConsistency(t *testing.T) {
+	topic, _ := NewTopic[string](1, 3)
+	key := "user123"
+	p1 := hash(key) % topic.PartitionCount
+	p2 := hash(key) % topic.PartitionCount
+	assert.Equal(t, p1, p2, "same key should map to same partition")
 }
