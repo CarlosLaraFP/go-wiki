@@ -2,6 +2,8 @@ package topics
 
 import (
 	"fmt"
+	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -11,8 +13,9 @@ type Topic[T any] struct {
 	Partitions     []chan T
 }
 
-var topics = make(map[int]*Topic[string])
+var Topics = make(map[int]*Topic[string])
 var partitionCount = 3
+var wg = &sync.WaitGroup{}
 
 // NewTopic creates a Topic with id and n partitions
 func NewTopic[T any](id, n int) (*Topic[T], error) {
@@ -25,8 +28,9 @@ func NewTopic[T any](id, n int) (*Topic[T], error) {
 		t.Partitions[i] = make(chan T) // should each channel be buffered?
 		go func(id int, c chan T) {
 			for m := range c {
-				time.Sleep(100 * time.Millisecond) // simulates work
-				fmt.Printf("topic id %d, partition id %d, message: %v\n", t.Id, id, m)
+				time.Sleep(1 * time.Second)                                            // simulates work
+				fmt.Printf("topic id %d, partition id %d, message: %v\n", t.Id, id, m) // send back into a receiver channel?
+				wg.Done()
 			}
 		}(i, t.Partitions[i])
 	}
@@ -35,19 +39,23 @@ func NewTopic[T any](id, n int) (*Topic[T], error) {
 
 // Sends message m of type T to Topic id
 func (t *Topic[T]) Send(m T) error {
-	// Router
+	// TODO: hash & router
+	p := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(t.PartitionCount)
+	t.Partitions[p] <- m
 	return nil
 }
 
-// Sends random messages to Topic id every s seconds
-func SendMessages(id, s int) {
-	for {
-		if _, exists := topics[id]; !exists {
-			t, _ := NewTopic[string](id, partitionCount)
-			topics[id] = t
-		}
-		t := topics[id]
-		t.Send(fmt.Sprintf("current time is %s", time.Now().Local().Format(time.RFC3339)))
-		time.Sleep(time.Duration(s) * time.Second)
+// Sends n random messages to Topic id
+func SendMessages(id, n int) {
+	if _, exists := Topics[id]; !exists {
+		t, _ := NewTopic[string](id, partitionCount)
+		Topics[id] = t
 	}
+	t := Topics[id]
+
+	for range n {
+		wg.Add(1)
+		t.Send(fmt.Sprintf("current time is %s", time.Now().Local().Format(time.RFC3339)))
+	}
+	wg.Wait() // wait until all n messages are processed by the Topic
 }

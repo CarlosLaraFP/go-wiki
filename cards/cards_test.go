@@ -49,7 +49,7 @@ func TestDeal(t *testing.T) {
 	deck := NewDeck(false)
 	if hand, err := deck.Deal(5); err != nil || (deck.Size() != 47 && len(hand) != 5) {
 		t.Errorf("Deal method failed")
-		deck.Show()
+		//deck.Show()
 	}
 }
 
@@ -77,7 +77,7 @@ func TestShuffle(t *testing.T) {
 	deck := NewDeck(false)
 	deck.Shuffle()
 	fmt.Println("Shuffled")
-	deck.Show()
+	//deck.Show()
 	if deck.Size() != 52 {
 		t.Errorf("expected %d cards; shuffle result %d", 52, deck.Size())
 	}
