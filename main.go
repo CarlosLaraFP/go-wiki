@@ -4,7 +4,6 @@ import (
 	"fmt"
 	c "go-wiki/concurrency"
 	i "go-wiki/interfaces"
-	"io"
 	"net/http"
 	"os"
 	"time"
@@ -25,12 +24,12 @@ func main() {
 		"fake",
 	}
 
-	rsp, err := http.Get("http://google.com")
+	_, err := http.Get("http://google.com")
 	if err != nil {
 		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
-	io.Copy(os.Stdout, rsp.Body)
+	//io.Copy(os.Stdout, rsp.Body)
 
 	c.LaunchWorkerPool([]string{"1.txt", "2.txt", "3.txt"}, 3)
 
@@ -42,9 +41,9 @@ func main() {
 		go c.CheckURL(url, ch)
 	}
 	// for each iteration, wait to receive a value from the channel
-	for url := range ch {
-		go c.CheckURL(url, ch)
-	}
+	//for url := range ch {
+	//	go c.CheckURL(url, ch)
+	//}
 
 	//web.Serve()
 }
