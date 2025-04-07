@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
 	c "go-wiki/concurrency"
+	"io"
+	"net/http"
+	"os"
 	"time"
 )
 
@@ -13,6 +17,13 @@ func main() {
 		"http://amazon.com",
 		"fake",
 	}
+
+	rsp, err := http.Get("http://google.com")
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+	io.Copy(os.Stdout, rsp.Body)
 
 	c.LaunchWorkerPool([]string{"1.txt", "2.txt", "3.txt"}, 3)
 

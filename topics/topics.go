@@ -61,7 +61,6 @@ func (t *Topic[T]) Send(key string, m T) error {
 	}
 	// Kafka also uses message keys to assign partitions
 	p := hash(key) % t.PartitionCount // Consistent hashing
-	//p := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(t.PartitionCount)
 	t.Partitions[p] <- m
 	return nil
 }
@@ -87,5 +86,5 @@ func SendMessages(id int, keys []string) {
 		wg.Add(1)
 		t.Send(k, fmt.Sprintf("current time is %s", time.Now().Local().Format(time.RFC3339)))
 	}
-	wg.Wait() // wait until all n messages are processed by the Topic
+	wg.Wait() // wait until all messages are processed by the Topic
 }

@@ -41,16 +41,16 @@ func (m *MemoryStorage[T]) Delete(key string) bool {
 }
 
 type LoggingStorage[T any] struct {
-	storage Storage[T]
+	Storage[T]
 }
 
 func (l *LoggingStorage[T]) Put(key string, value T) {
-	l.storage.Put(key, value)
+	l.Storage.Put(key, value)
 	fmt.Printf("[PUT] key=%s value=%v\n", key, value)
 }
 
 func (l *LoggingStorage[T]) Get(key string) (T, bool) {
-	value, exists := l.storage.Get(key)
+	value, exists := l.Storage.Get(key)
 	if exists {
 		fmt.Printf("[GET] value: %v\n", value)
 	} else {
@@ -59,11 +59,13 @@ func (l *LoggingStorage[T]) Get(key string) (T, bool) {
 	return value, exists
 }
 
-func (l *LoggingStorage[T]) Delete(key string) {
-	if l.storage.Delete(key) {
+func (l *LoggingStorage[T]) Delete(key string) bool {
+	if l.Storage.Delete(key) {
 		fmt.Printf("Key '%s' successfully deleted", key)
+		return true
 	} else {
 		fmt.Printf("Key '%s' does not exist", key)
+		return false
 	}
 }
 
