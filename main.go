@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	c "go-wiki/concurrency"
+	i "go-wiki/interfaces"
 	"io"
 	"net/http"
 	"os"
@@ -10,6 +11,12 @@ import (
 )
 
 func main() {
+	s := i.Square{Length: 4}
+	t := i.Triangle{Base: 5, Height: 4}
+
+	i.ShowShape(&s)
+	i.ShowShape(&t)
+
 	urls := []string{
 		"http://google.com",
 		"http://facebook.com",
