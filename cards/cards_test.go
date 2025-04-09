@@ -97,6 +97,17 @@ func TestThreadSafety(t *testing.T) {
 		deck.Deal(5)
 	}()
 	wg.Wait()
-	deck.Show()
 	assert.Equal(t, 47, deck.Size())
+
+	newTop := Card{Number: 8, Type: types[len(types)-1]}
+	top := Card{Number: 13, Type: types[len(types)-1]}
+
+	if deck.Cards.Elements[0] == top {
+		fmt.Println("Discard executed first")
+	} else if deck.Cards.Elements[0] == newTop {
+		fmt.Println("Deal executed first")
+	} else {
+		t.Errorf("Something went wrong.")
+		deck.Show()
+	}
 }
