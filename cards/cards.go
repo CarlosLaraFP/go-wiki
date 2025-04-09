@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 )
 
 type Stack[T any] struct {
+	sync.RWMutex
 	Elements []T `json:"elements"`
 }
 
@@ -16,16 +18,22 @@ func (s *Stack[T]) Pop() *T {
 	if len(s.Elements) == 0 {
 		return nil
 	}
+	s.Lock()
+	defer s.Unlock()
 	top := &s.Elements[len(s.Elements)-1]
 	s.Elements = s.Elements[:len(s.Elements)-1]
 	return top
 }
 
 func (s *Stack[T]) PushTop(element T) {
+	s.Lock()
+	defer s.Unlock()
 	s.Elements = append(s.Elements, element)
 }
 
 func (s *Stack[T]) PushBottom(element T) {
+	s.Lock()
+	defer s.Unlock()
 	s.Elements = append([]T{element}, s.Elements...)
 }
 
@@ -40,15 +48,21 @@ func (s *Stack[T]) Shuffle() {
 	rand.
 		New(rand.NewSource(time.Now().UnixNano())).
 		Shuffle(s.Size(), func(i, j int) {
+			s.Lock()
+			defer s.Unlock()
 			s.Elements[i], s.Elements[j] = s.Elements[j], s.Elements[i]
 		})
 }
 
 func (s *Stack[T]) Size() int {
+	s.RLock()
+	defer s.RUnlock()
 	return len(s.Elements)
 }
 
 func (s *Stack[T]) Show() {
+	s.RLock()
+	defer s.RUnlock()
 	for i := s.Size() - 1; i >= 0; i-- {
 		fmt.Printf("%v\n", s.Elements[i])
 	}

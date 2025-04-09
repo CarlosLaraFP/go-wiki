@@ -3,6 +3,7 @@ package cards
 import (
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,4 +82,21 @@ func TestShuffle(t *testing.T) {
 	if deck.Size() != 52 {
 		t.Errorf("expected %d cards; shuffle result %d", 52, deck.Size())
 	}
+}
+
+func TestThreadSafety(t *testing.T) {
+	deck := NewDeck(false)
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		deck.Discard()
+	}()
+	go func() {
+		defer wg.Done()
+		deck.Deal(5)
+	}()
+	wg.Wait()
+	deck.Show()
+	assert.Equal(t, 47, deck.Size())
 }
