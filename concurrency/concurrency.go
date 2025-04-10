@@ -1,7 +1,9 @@
 package concurrency
 
 import (
+	"context"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -56,4 +58,114 @@ func LaunchWorkerPool(fileNames []string, n int) {
 	}
 	close(c)
 	wg.Wait()
+}
+
+////////////////////////////////////////////////////////////////////////
+
+type Worker[T any] struct {
+	Id    int
+	Queue chan Message[T]
+}
+
+type WorkerPool[T any] struct {
+	Workers []Worker[T]
+}
+
+func (wp *WorkerPool[T]) Cleanup() {
+	for _, w := range wp.Workers {
+		close(w.Queue)
+	}
+}
+
+// NewWorkerPool accepts n worker count and l buffer size and returns a WorkerPool
+func NewWorkerPool[T any](n, l int) (*WorkerPool[T], error) {
+	var w []Worker[T]
+	for i := range n {
+		w = append(w, Worker[T]{
+			Id:    i,
+			Queue: make(chan Message[T], l),
+		})
+		go MessageProcessor(w[i].Queue)
+	}
+	wp := WorkerPool[T]{Workers: w}
+	return &wp, nil
+}
+
+type DeadLetterQueue[T any] struct {
+	sync.Mutex
+	failed []T
+}
+
+func (dlq *DeadLetterQueue[T]) Add(message T) {
+	dlq.Lock()
+	defer dlq.Unlock()
+	dlq.failed = append(dlq.failed, message)
+}
+
+// process respects the context deadline
+func process[T any](ctx context.Context, m T, d time.Duration, retry int) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	if retry > 3 {
+		return fmt.Errorf("3rd retry failed for resource: %v", m)
+	}
+	time.Sleep(d)
+	if n := rand.Float64(); n <= 0.20 {
+		fmt.Printf("Simulating random failure for resource: %v. Retrying...\n", m)
+		process(ctx, m, d*2, retry+1)
+	}
+
+	fmt.Printf("Fetched Resource: %v\n", m)
+	return nil
+}
+
+func MessageProcessor[T any](ch chan Message[T]) {
+	for m := range ch {
+		if err := process(m.ctx, m.message, time.Millisecond*200, 1); err != nil {
+			fmt.Println(err)
+			m.dlq.Add(m.message)
+		}
+		m.wg.Done()
+	}
+}
+
+type Message[T any] struct {
+	message T
+	ctx     context.Context
+	wg      *sync.WaitGroup
+	dlq     *DeadLetterQueue[T]
+}
+
+// ProcessResourceIds blocks until processing is complete.
+// The whole process must respect a context.Context timeout (e.g., 5 seconds).
+// If the context is canceled (timeout hit), workers must immediately stop.
+func ProcessResourceIds[T any](ctx context.Context, wp *WorkerPool[T], ids []T) {
+	wg := &sync.WaitGroup{}
+	c, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	dlq := &DeadLetterQueue[T]{}
+
+	for _, id := range ids {
+		wg.Add(1)
+		i := rand.Intn(len(wp.Workers))
+		wp.Workers[i].Queue <- Message[T]{id, c, wg, dlq}
+	}
+	wg.Wait()
+	/*
+		If the context deadline is hit during wg.Wait():
+		The context (c) is automatically canceled by Go’s runtime.
+		Workers (goroutines) notice ctx.Done() inside process().
+		Workers immediately stop processing further retries.
+		Workers still call wg.Done() once they return from process().
+		wg.Wait() will continue waiting for all workers to call Done().
+		After all workers call Done(), wg.Wait() will unblock normally.
+	*/
+
+	if len(dlq.failed) > 0 {
+		fmt.Printf("%d messages failed to process", len(dlq.failed))
+	}
 }
