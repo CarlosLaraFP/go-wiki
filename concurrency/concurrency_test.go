@@ -1,7 +1,10 @@
 package concurrency
 
 import (
+	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -34,4 +37,19 @@ func TestCleanup(t *testing.T) {
 		default:
 		}
 	}
+}
+
+func TestProcess(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	err := process(ctx, 100, time.Millisecond*250, 0)
+	assert.NoError(t, err)
+	fmt.Println(err)
+	err = process(ctx, 10, time.Millisecond*250, 3)
+	assert.NoError(t, err)
+	cancel()
+	ctx, cancel = context.WithTimeout(context.TODO(), 5*time.Millisecond)
+	defer cancel()
+	time.Sleep(200 * time.Millisecond)
+	err = process(ctx, 100, time.Millisecond*250, 0)
+	assert.Error(t, err)
 }

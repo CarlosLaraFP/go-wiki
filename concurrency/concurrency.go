@@ -62,6 +62,24 @@ func LaunchWorkerPool(fileNames []string, n int) {
 
 ////////////////////////////////////////////////////////////////////////
 
+type DeadLetterQueue[T any] struct {
+	sync.Mutex
+	failed []T
+}
+
+func (dlq *DeadLetterQueue[T]) Add(message T) {
+	dlq.Lock()
+	defer dlq.Unlock()
+	dlq.failed = append(dlq.failed, message)
+}
+
+type Message[T any] struct {
+	message T
+	ctx     context.Context
+	wg      *sync.WaitGroup
+	dlq     *DeadLetterQueue[T]
+}
+
 type Worker[T any] struct {
 	Id    int
 	Queue chan Message[T]
@@ -85,21 +103,10 @@ func NewWorkerPool[T any](n, l int) (*WorkerPool[T], error) {
 			Id:    i,
 			Queue: make(chan Message[T], l),
 		})
-		go MessageProcessor(w[i].Queue)
+		go messageProcessor(w[i].Queue)
 	}
 	wp := WorkerPool[T]{Workers: w}
 	return &wp, nil
-}
-
-type DeadLetterQueue[T any] struct {
-	sync.Mutex
-	failed []T
-}
-
-func (dlq *DeadLetterQueue[T]) Add(message T) {
-	dlq.Lock()
-	defer dlq.Unlock()
-	dlq.failed = append(dlq.failed, message)
 }
 
 // process respects the context deadline
@@ -122,7 +129,7 @@ func process[T any](ctx context.Context, m T, d time.Duration, retry int) error 
 	return nil
 }
 
-func MessageProcessor[T any](ch chan Message[T]) {
+func messageProcessor[T any](ch chan Message[T]) {
 	for m := range ch {
 		if err := process(m.ctx, m.message, time.Millisecond*200, 1); err != nil {
 			fmt.Println(err)
@@ -130,13 +137,6 @@ func MessageProcessor[T any](ch chan Message[T]) {
 		}
 		m.wg.Done()
 	}
-}
-
-type Message[T any] struct {
-	message T
-	ctx     context.Context
-	wg      *sync.WaitGroup
-	dlq     *DeadLetterQueue[T]
 }
 
 // ProcessResourceIds blocks until processing is complete.
