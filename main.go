@@ -17,8 +17,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	ids := make([]string, 20)
-	for i := range ids {
+	capacity := 20
+	ids := make([]string, 0, capacity)
+	for i := range capacity {
 		ids = append(ids, fmt.Sprintf("event-%d", i))
 	}
 	c.ProcessResourceIds(context.Background(), wp, ids)
