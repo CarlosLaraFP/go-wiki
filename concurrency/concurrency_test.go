@@ -81,7 +81,12 @@ func TestProcessResourceIds(t *testing.T) {
 	for i := range capacity {
 		ids = append(ids, fmt.Sprintf("event-%d", i))
 	}
-	ProcessResourceIds(context.Background(), wp, dlq, ids)
+	request := Request[string]{
+		Context:    context.Background(),
+		WorkerPool: wp,
+		DLQueue:    dlq,
+	}
+	ProcessResources(request, ids)
 	assert.Empty(t, dlq.Failed)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -91,6 +96,11 @@ func TestProcessResourceIds(t *testing.T) {
 	for i := range capacity {
 		copy = append(copy, fmt.Sprintf("event-%d", i))
 	}
-	ProcessResourceIds(ctx, wp, dlq, copy)
+	new := Request[string]{
+		Context:    ctx,
+		WorkerPool: wp,
+		DLQueue:    dlq,
+	}
+	ProcessResources(new, copy)
 	assert.NotEmpty(t, dlq.Failed)
 }

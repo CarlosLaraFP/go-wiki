@@ -139,18 +139,24 @@ func messageProcessor[T any](ch chan *Message[T]) {
 	}
 }
 
+type Request[T any] struct {
+	Context    context.Context
+	WorkerPool *WorkerPool[T]
+	DLQueue    *DeadLetterQueue[T]
+}
+
 // ProcessResourceIds blocks until processing is complete.
 // The whole process must respect a context.Context timeout (e.g., 5 seconds).
 // If the context is canceled (timeout hit), workers must immediately stop.
-func ProcessResourceIds[T any](ctx context.Context, wp *WorkerPool[T], dlq *DeadLetterQueue[T], ids []T) {
+func ProcessResources[T any](r Request[T], s []T) {
 	wg := &sync.WaitGroup{}
-	c, cancel := context.WithTimeout(ctx, 5*time.Second)
+	c, cancel := context.WithTimeout(r.Context, 5*time.Second)
 	defer cancel()
 
-	for _, id := range ids {
+	for _, m := range s {
 		wg.Add(1)
-		i := rand.Intn(len(wp.Workers))
-		wp.Workers[i].Queue <- &Message[T]{id, c, wg, dlq}
+		i := rand.Intn(len(r.WorkerPool.Workers))
+		r.WorkerPool.Workers[i].Queue <- &Message[T]{m, c, wg, r.DLQueue}
 	}
 	wg.Wait()
 	/*

@@ -25,7 +25,13 @@ func main() {
 	for i := range capacity {
 		ids = append(ids, fmt.Sprintf("event-%d", i))
 	}
-	c.ProcessResourceIds(context.Background(), wp, dlq, ids)
+
+	request := c.Request[string]{
+		Context:    context.Background(),
+		WorkerPool: wp,
+		DLQueue:    dlq,
+	}
+	c.ProcessResources(request, ids)
 
 	if len(dlq.Failed) > 0 {
 		fmt.Printf("%d messages failed to process", len(dlq.Failed))
