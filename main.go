@@ -16,15 +16,21 @@ func main() {
 		fmt.Printf("error setting up worker pool: %v\n", err)
 		os.Exit(1)
 	}
+	defer wp.Cleanup()
+
+	dlq := &c.DeadLetterQueue[string]{}
 
 	capacity := 20
 	ids := make([]string, 0, capacity)
 	for i := range capacity {
 		ids = append(ids, fmt.Sprintf("event-%d", i))
 	}
-	c.ProcessResourceIds(context.Background(), wp, ids)
+	c.ProcessResourceIds(context.Background(), wp, dlq, ids)
 
-	wp.Cleanup()
+	if len(dlq.Failed) > 0 {
+		fmt.Printf("%d messages failed to process", len(dlq.Failed))
+	}
+
 	/*
 		s := i.Square{Length: 4}
 		t := i.Triangle{Base: 5, Height: 4}

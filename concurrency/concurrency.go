@@ -64,13 +64,13 @@ func LaunchWorkerPool(fileNames []string, n int) {
 
 type DeadLetterQueue[T any] struct {
 	sync.Mutex
-	failed []T
+	Failed []T
 }
 
 func (dlq *DeadLetterQueue[T]) Add(message T) {
 	dlq.Lock()
 	defer dlq.Unlock()
-	dlq.failed = append(dlq.failed, message)
+	dlq.Failed = append(dlq.Failed, message)
 }
 
 type Message[T any] struct {
@@ -82,7 +82,7 @@ type Message[T any] struct {
 
 type Worker[T any] struct {
 	Id    int
-	Queue chan Message[T]
+	Queue chan *Message[T]
 }
 
 type WorkerPool[T any] struct {
@@ -101,7 +101,7 @@ func NewWorkerPool[T any](n, l int) (*WorkerPool[T], error) {
 	for i := range n {
 		w = append(w, Worker[T]{
 			Id:    i,
-			Queue: make(chan Message[T], l),
+			Queue: make(chan *Message[T], l),
 		})
 		go messageProcessor(w[i].Queue)
 	}
@@ -129,7 +129,7 @@ func process[T any](ctx context.Context, m T, d time.Duration, retry int) error 
 	return nil
 }
 
-func messageProcessor[T any](ch chan Message[T]) {
+func messageProcessor[T any](ch chan *Message[T]) {
 	for m := range ch {
 		if err := process(m.ctx, m.message, time.Millisecond*200, 1); err != nil {
 			fmt.Println(err)
@@ -142,17 +142,15 @@ func messageProcessor[T any](ch chan Message[T]) {
 // ProcessResourceIds blocks until processing is complete.
 // The whole process must respect a context.Context timeout (e.g., 5 seconds).
 // If the context is canceled (timeout hit), workers must immediately stop.
-func ProcessResourceIds[T any](ctx context.Context, wp *WorkerPool[T], ids []T) {
+func ProcessResourceIds[T any](ctx context.Context, wp *WorkerPool[T], dlq *DeadLetterQueue[T], ids []T) {
 	wg := &sync.WaitGroup{}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	dlq := &DeadLetterQueue[T]{}
-
 	for _, id := range ids {
 		wg.Add(1)
 		i := rand.Intn(len(wp.Workers))
-		wp.Workers[i].Queue <- Message[T]{id, c, wg, dlq}
+		wp.Workers[i].Queue <- &Message[T]{id, c, wg, dlq}
 	}
 	wg.Wait()
 	/*
@@ -164,8 +162,4 @@ func ProcessResourceIds[T any](ctx context.Context, wp *WorkerPool[T], ids []T) 
 		wg.Wait() will continue waiting for all workers to call Done().
 		After all workers call Done(), wg.Wait() will unblock normally.
 	*/
-
-	if len(dlq.failed) > 0 {
-		fmt.Printf("%d messages failed to process", len(dlq.failed))
-	}
 }

@@ -3,6 +3,7 @@ package concurrency
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,4 +53,44 @@ func TestProcess(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	err = process(ctx, 100, time.Millisecond*250, 0)
 	assert.Error(t, err)
+}
+
+func TestMessageProcessor(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	defer cancel()
+	wg := &sync.WaitGroup{}
+	dlq := &DeadLetterQueue[float64]{}
+	m := &Message[float64]{3.14159, ctx, wg, dlq}
+	ch := make(chan *Message[float64])
+	go messageProcessor(ch)
+	time.Sleep(200 * time.Millisecond)
+	wg.Add(1)
+	ch <- m
+	wg.Wait()
+}
+
+func TestProcessResourceIds(t *testing.T) {
+	wp, err := NewWorkerPool[string](5, 10)
+	assert.NoError(t, err)
+	defer wp.Cleanup()
+
+	dlq := &DeadLetterQueue[string]{}
+
+	capacity := 20
+	ids := make([]string, 0, capacity)
+	for i := range capacity {
+		ids = append(ids, fmt.Sprintf("event-%d", i))
+	}
+	ProcessResourceIds(context.Background(), wp, dlq, ids)
+	assert.Empty(t, dlq.Failed)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	copy := make([]string, 0, capacity)
+	for i := range capacity {
+		copy = append(copy, fmt.Sprintf("event-%d", i))
+	}
+	ProcessResourceIds(ctx, wp, dlq, copy)
+	assert.NotEmpty(t, dlq.Failed)
 }
