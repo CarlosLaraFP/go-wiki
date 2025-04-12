@@ -41,26 +41,28 @@ func TestCleanup(t *testing.T) {
 }
 
 func TestProcess(t *testing.T) {
+	ch := make(chan int, 10)
 	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-	err := process(ctx, 100, time.Millisecond*250, 0)
+	err := process(ctx, 100, ch, time.Millisecond*250, 0)
 	assert.NoError(t, err)
 	fmt.Println(err)
-	err = process(ctx, 10, time.Millisecond*250, 3)
+	err = process(ctx, 10, ch, time.Millisecond*250, 3)
 	assert.NoError(t, err)
 	cancel()
 	ctx, cancel = context.WithTimeout(context.TODO(), 5*time.Millisecond)
 	defer cancel()
 	time.Sleep(200 * time.Millisecond)
-	err = process(ctx, 100, time.Millisecond*250, 0)
+	err = process(ctx, 100, ch, time.Millisecond*250, 0)
 	assert.Error(t, err)
 }
 
 func TestMessageProcessor(t *testing.T) {
+	log := make(chan float64, 10)
 	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 	defer cancel()
 	wg := &sync.WaitGroup{}
 	dlq := &DeadLetterQueue[float64]{}
-	m := &Message[float64]{3.14159, ctx, wg, dlq}
+	m := &Message[float64]{3.14159, ctx, dlq, log, wg}
 	ch := make(chan *Message[float64])
 	go messageProcessor(ch)
 	time.Sleep(200 * time.Millisecond)
@@ -85,22 +87,32 @@ func TestProcessResourceIds(t *testing.T) {
 		Context:    context.Background(),
 		WorkerPool: wp,
 		DLQueue:    dlq,
+		Log:        make(chan string, capacity), // no capacity == deadlock
 	}
 	ProcessResources(request, ids)
+
+	for r := range request.Log {
+		fmt.Printf("Processed message: %v\n", r)
+	}
+
 	assert.Empty(t, dlq.Failed)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	copy := make([]string, 0, capacity)
+
 	for i := range capacity {
 		copy = append(copy, fmt.Sprintf("event-%d", i))
 	}
+
 	new := Request[string]{
 		Context:    ctx,
 		WorkerPool: wp,
 		DLQueue:    dlq,
+		Log:        make(chan string, capacity), // no capacity == deadlock
 	}
+
 	ProcessResources(new, copy)
 	assert.NotEmpty(t, dlq.Failed)
 }

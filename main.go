@@ -11,14 +11,6 @@ import (
 )
 
 func main() {
-
-}
-
-func RunFanInFanOutPattern() {
-
-}
-
-func RunContextPattern() {
 	wp, err := c.NewWorkerPool[string](5, 10)
 	if err != nil {
 		fmt.Printf("error setting up worker pool: %v\n", err)
@@ -38,8 +30,13 @@ func RunContextPattern() {
 		Context:    context.Background(),
 		WorkerPool: wp,
 		DLQueue:    dlq,
+		Log:        make(chan string, len(ids)),
 	}
 	c.ProcessResources(request, ids)
+
+	for r := range request.Log {
+		fmt.Printf("Processed message: %v\n", r)
+	}
 
 	if len(dlq.Failed) > 0 {
 		fmt.Printf("%d messages failed to process", len(dlq.Failed))

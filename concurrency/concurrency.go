@@ -61,8 +61,6 @@ func LaunchWorkerPool(fileNames []string, n int) {
 }
 
 ////////////////////////////////////////////////////////////////////////
-// RunContextPattern //
-////////////////////////////////////////////////////////////////////////
 
 type DeadLetterQueue[T comparable] struct {
 	sync.Mutex
@@ -79,8 +77,9 @@ func (dlq *DeadLetterQueue[T]) Add(message T) {
 type Message[T comparable] struct {
 	message T
 	ctx     context.Context
-	wg      *sync.WaitGroup
 	dlq     *DeadLetterQueue[T]
+	log     chan T
+	wg      *sync.WaitGroup
 }
 
 type Worker[T comparable] struct {
@@ -114,7 +113,7 @@ func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 
 func messageProcessor[T comparable](ch chan *Message[T]) {
 	for m := range ch {
-		if err := process(m.ctx, m.message, time.Millisecond*200, 1); err != nil {
+		if err := process(m.ctx, m.message, m.log, time.Millisecond*200, 1); err != nil {
 			fmt.Println(err)
 			m.dlq.Add(m.message)
 		}
@@ -123,7 +122,7 @@ func messageProcessor[T comparable](ch chan *Message[T]) {
 }
 
 // process respects the context deadline
-func process[T comparable](ctx context.Context, m T, d time.Duration, retry int) error {
+func process[T comparable](ctx context.Context, m T, l chan T, d time.Duration, retry int) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -132,13 +131,15 @@ func process[T comparable](ctx context.Context, m T, d time.Duration, retry int)
 	if retry > 3 {
 		return fmt.Errorf("3rd retry failed for resource: %v", m)
 	}
+
 	time.Sleep(d)
+
 	if n := rand.Float64(); n <= 0.20 {
 		fmt.Printf("Simulating random failure for resource: %v. Retrying...\n", m)
-		process(ctx, m, d*2, retry+1)
+		return process(ctx, m, l, d*2, retry+1)
 	}
 
-	fmt.Printf("Fetched Resource: %v\n", m)
+	l <- m
 	return nil
 }
 
@@ -146,20 +147,24 @@ type Request[T comparable] struct {
 	Context    context.Context
 	WorkerPool *WorkerPool[T]
 	DLQueue    *DeadLetterQueue[T]
+	Log        chan T
 }
 
-// ProcessResourceIds blocks until processing is complete.
-// The whole process must respect a context.Context timeout (e.g., 5 seconds).
-// If the context is canceled (timeout hit), workers must immediately stop.
+// ProcessResources processes a slice of resources concurrently using a WorkerPool
+// The whole process respects a context.Context timeout (e.g., 5 seconds).
+// If the context is canceled (timeout hit), workers stop immediately.
+// The total time receiving from the Log also counts.
 func ProcessResources[T comparable](r Request[T], s []T) {
 	wg := &sync.WaitGroup{}
 	c, cancel := context.WithTimeout(r.Context, 5*time.Second)
 	defer cancel()
+	defer close(r.Log)
 
 	for _, m := range s {
 		wg.Add(1)
+		// Random dispatcher fans out jobs evenly to available workers (Fan-Out)
 		i := rand.Intn(len(r.WorkerPool.Workers))
-		r.WorkerPool.Workers[i].Queue <- &Message[T]{m, c, wg, r.DLQueue}
+		r.WorkerPool.Workers[i].Queue <- &Message[T]{m, c, r.DLQueue, r.Log, wg}
 	}
 	wg.Wait()
 	/*
@@ -172,10 +177,6 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 		After all workers call Done(), wg.Wait() will unblock normally.
 	*/
 }
-
-////////////////////////////////////////////////////////////////////////
-// RunFanInFanOutPattern //
-////////////////////////////////////////////////////////////////////////
 
 // ScaleUp dynamically adds n workers to the pool, each with buffer capacity c
 func (wp *WorkerPool[T]) ScaleUp(n, c int) {
@@ -199,6 +200,7 @@ func (wp *WorkerPool[T]) ScaleDown(n int) error {
 		for closed < n {
 			for _, w := range wp.Workers {
 				if len(w.Queue) > 0 {
+					time.Sleep(1 * time.Second)
 					continue
 				}
 				close(w.Queue)
