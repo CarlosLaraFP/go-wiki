@@ -61,8 +61,10 @@ func LaunchWorkerPool(fileNames []string, n int) {
 }
 
 ////////////////////////////////////////////////////////////////////////
+// RunContextPattern //
+////////////////////////////////////////////////////////////////////////
 
-type DeadLetterQueue[T any] struct {
+type DeadLetterQueue[T comparable] struct {
 	sync.Mutex
 	Failed []T
 }
@@ -73,19 +75,20 @@ func (dlq *DeadLetterQueue[T]) Add(message T) {
 	dlq.Failed = append(dlq.Failed, message)
 }
 
-type Message[T any] struct {
+// fmt.Stringer
+type Message[T comparable] struct {
 	message T
 	ctx     context.Context
 	wg      *sync.WaitGroup
 	dlq     *DeadLetterQueue[T]
 }
 
-type Worker[T any] struct {
+type Worker[T comparable] struct {
 	Id    int
 	Queue chan *Message[T]
 }
 
-type WorkerPool[T any] struct {
+type WorkerPool[T comparable] struct {
 	Workers []Worker[T]
 }
 
@@ -95,13 +98,13 @@ func (wp *WorkerPool[T]) Cleanup() {
 	}
 }
 
-// NewWorkerPool accepts n worker count and l buffer size and returns a WorkerPool
-func NewWorkerPool[T any](n, l int) (*WorkerPool[T], error) {
+// NewWorkerPool accepts n worker count and c buffer capacity and returns a WorkerPool
+func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 	var w []Worker[T]
 	for i := range n {
 		w = append(w, Worker[T]{
 			Id:    i,
-			Queue: make(chan *Message[T], l),
+			Queue: make(chan *Message[T], c),
 		})
 		go messageProcessor(w[i].Queue)
 	}
@@ -109,8 +112,18 @@ func NewWorkerPool[T any](n, l int) (*WorkerPool[T], error) {
 	return &wp, nil
 }
 
+func messageProcessor[T comparable](ch chan *Message[T]) {
+	for m := range ch {
+		if err := process(m.ctx, m.message, time.Millisecond*200, 1); err != nil {
+			fmt.Println(err)
+			m.dlq.Add(m.message)
+		}
+		m.wg.Done()
+	}
+}
+
 // process respects the context deadline
-func process[T any](ctx context.Context, m T, d time.Duration, retry int) error {
+func process[T comparable](ctx context.Context, m T, d time.Duration, retry int) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -129,17 +142,7 @@ func process[T any](ctx context.Context, m T, d time.Duration, retry int) error 
 	return nil
 }
 
-func messageProcessor[T any](ch chan *Message[T]) {
-	for m := range ch {
-		if err := process(m.ctx, m.message, time.Millisecond*200, 1); err != nil {
-			fmt.Println(err)
-			m.dlq.Add(m.message)
-		}
-		m.wg.Done()
-	}
-}
-
-type Request[T any] struct {
+type Request[T comparable] struct {
 	Context    context.Context
 	WorkerPool *WorkerPool[T]
 	DLQueue    *DeadLetterQueue[T]
@@ -148,7 +151,7 @@ type Request[T any] struct {
 // ProcessResourceIds blocks until processing is complete.
 // The whole process must respect a context.Context timeout (e.g., 5 seconds).
 // If the context is canceled (timeout hit), workers must immediately stop.
-func ProcessResources[T any](r Request[T], s []T) {
+func ProcessResources[T comparable](r Request[T], s []T) {
 	wg := &sync.WaitGroup{}
 	c, cancel := context.WithTimeout(r.Context, 5*time.Second)
 	defer cancel()
@@ -168,4 +171,40 @@ func ProcessResources[T any](r Request[T], s []T) {
 		wg.Wait() will continue waiting for all workers to call Done().
 		After all workers call Done(), wg.Wait() will unblock normally.
 	*/
+}
+
+////////////////////////////////////////////////////////////////////////
+// RunFanInFanOutPattern //
+////////////////////////////////////////////////////////////////////////
+
+// ScaleUp dynamically adds n workers to the pool, each with buffer capacity c
+func (wp *WorkerPool[T]) ScaleUp(n, c int) {
+	wc := len(wp.Workers)
+	for i := range n {
+		wp.Workers = append(wp.Workers, Worker[T]{
+			Id:    i + wc,
+			Queue: make(chan *Message[T], c),
+		})
+	}
+}
+
+// ScaleDown dynamically removes n workers from the pool by closing their channels
+// Asynchronous behavior: Only closed or empty channels can be removed (waits for non-empty channels to drain)
+func (wp *WorkerPool[T]) ScaleDown(n int) error {
+	if n > len(wp.Workers) {
+		return fmt.Errorf("%d is greater than the number of workers: %d. Use WorkerPool.Cleanup() instead", n, len(wp.Workers))
+	}
+	closed := 0
+	go func() {
+		for closed < n {
+			for _, w := range wp.Workers {
+				if len(w.Queue) > 0 {
+					continue
+				}
+				close(w.Queue)
+				closed++
+			}
+		}
+	}()
+	return nil
 }
