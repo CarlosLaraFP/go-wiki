@@ -74,7 +74,7 @@ func (dlq *DeadLetterQueue[T]) Add(message T) {
 }
 
 // fmt.Stringer
-type Message[T comparable] struct {
+type Job[T comparable] struct {
 	message T
 	ctx     context.Context
 	dlq     *DeadLetterQueue[T]
@@ -84,7 +84,7 @@ type Message[T comparable] struct {
 
 type Worker[T comparable] struct {
 	Id    int
-	Queue chan *Message[T]
+	Queue chan *Job[T]
 }
 
 type WorkerPool[T comparable] struct {
@@ -93,7 +93,7 @@ type WorkerPool[T comparable] struct {
 	Alive   bool
 }
 
-func (wp *WorkerPool[T]) Dispatch(m *Message[T]) {
+func (wp *WorkerPool[T]) Dispatch(m *Job[T]) {
 	wp.Lock()
 	defer wp.Unlock()
 	// Random dispatcher fans out jobs evenly to available workers (Fan-Out)
@@ -105,7 +105,13 @@ func (wp *WorkerPool[T]) Cleanup() {
 	wp.Alive = false
 
 	for _, w := range wp.Workers {
-		close(w.Queue)
+		select {
+		case _, ok := <-w.Queue:
+			if ok {
+				close(w.Queue)
+			}
+		default:
+		}
 	}
 }
 
@@ -115,7 +121,7 @@ func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 	for i := range n {
 		w = append(w, Worker[T]{
 			Id:    i,
-			Queue: make(chan *Message[T], c),
+			Queue: make(chan *Job[T], c),
 		})
 		go messageProcessor(w[i].Queue)
 	}
@@ -123,7 +129,7 @@ func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 	return &wp, nil
 }
 
-func messageProcessor[T comparable](ch chan *Message[T]) {
+func messageProcessor[T comparable](ch chan *Job[T]) {
 	for m := range ch {
 		if err := process(m.ctx, m.message, m.log, time.Millisecond*200, 1); err != nil {
 			fmt.Println(err)
@@ -183,16 +189,15 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 			time.Sleep(2 * time.Second)
 			r.WorkerPool.ScaleUp(2, cap(r.Log))
 			time.Sleep(2 * time.Second)
-			r.WorkerPool.ScaleDown(2)
+			_ = r.WorkerPool.ScaleDown(2)
 		}
 	}()
 
 	for _, m := range s {
 		wg.Add(1)
-		r.WorkerPool.Dispatch(&Message[T]{m, c, r.DLQueue, r.Log, wg})
+		r.WorkerPool.Dispatch(&Job[T]{m, c, r.DLQueue, r.Log, wg})
 	}
 	wg.Wait()
-
 	/*
 		If the context deadline is hit during wg.Wait():
 		The context (c) is automatically canceled by Go’s runtime.
@@ -214,7 +219,7 @@ func (wp *WorkerPool[T]) ScaleUp(n, c int) {
 		for i := range n {
 			wp.Workers = append(wp.Workers, Worker[T]{
 				Id:    i + l,
-				Queue: make(chan *Message[T], c),
+				Queue: make(chan *Job[T], c),
 			})
 			go messageProcessor(wp.Workers[i+l].Queue)
 		}
@@ -224,16 +229,19 @@ func (wp *WorkerPool[T]) ScaleUp(n, c int) {
 
 // ScaleDown dynamically removes n workers from the pool by closing their channels.
 // Asynchronous behavior: Only closed or empty channels can be removed (waits for non-empty channels to drain).
-func (wp *WorkerPool[T]) ScaleDown(n int) {
+func (wp *WorkerPool[T]) ScaleDown(n int) int {
 	wp.Lock()
 	defer wp.Unlock()
 	if n > len(wp.Workers) {
 		fmt.Printf("%d is greater than the number of workers: %d. Use WorkerPool.Cleanup() instead", n, len(wp.Workers))
-		return
+		return 0
 	}
 	closed := 0
 	for wp.Alive && closed < n {
 		for _, w := range wp.Workers {
+			if closed == n {
+				break
+			}
 			select {
 			case _, ok := <-w.Queue: // non-blocking check
 				if !ok {
@@ -249,4 +257,5 @@ func (wp *WorkerPool[T]) ScaleDown(n int) {
 		}
 		fmt.Printf("Removed %d workers from the pool by closing their channels\n", closed)
 	}
+	return closed
 }

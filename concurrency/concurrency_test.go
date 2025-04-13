@@ -62,8 +62,8 @@ func TestMessageProcessor(t *testing.T) {
 	defer cancel()
 	wg := &sync.WaitGroup{}
 	dlq := &DeadLetterQueue[float64]{}
-	m := &Message[float64]{3.14159, ctx, dlq, log, wg}
-	ch := make(chan *Message[float64])
+	m := &Job[float64]{3.14159, ctx, dlq, log, wg}
+	ch := make(chan *Job[float64])
 	go messageProcessor(ch)
 	time.Sleep(200 * time.Millisecond)
 	wg.Add(1)
@@ -115,4 +115,20 @@ func TestProcessResourceIds(t *testing.T) {
 
 	ProcessResources(new, copy)
 	assert.NotEmpty(t, dlq.Failed)
+}
+
+func TestScaleUp(t *testing.T) {
+	wp, _ := NewWorkerPool[string](5, 10)
+	defer wp.Cleanup()
+
+	wp.ScaleUp(5, 20)
+	assert.Equal(t, 10, len(wp.Workers))
+}
+
+func TestScaleDown(t *testing.T) {
+	wp, _ := NewWorkerPool[string](5, 10)
+	defer wp.Cleanup()
+
+	closed := wp.ScaleDown(4)
+	assert.Equal(t, 4, closed)
 }
