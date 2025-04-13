@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	wp, err := c.NewWorkerPool[string](5, 10)
+	wp, err := c.NewWorkerPool[string](3, 10)
 	if err != nil {
 		fmt.Printf("error setting up worker pool: %v\n", err)
 		os.Exit(1)
@@ -30,12 +30,12 @@ func main() {
 		Context:    context.Background(),
 		WorkerPool: wp,
 		DLQueue:    dlq,
-		Log:        make(chan string, len(ids)),
+		Log:        make(chan string, capacity),
 	}
 	c.ProcessResources(request, ids)
 
 	for r := range request.Log {
-		fmt.Printf("Processed message: %v\n", r)
+		fmt.Println(r)
 	}
 
 	if len(dlq.Failed) > 0 {

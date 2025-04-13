@@ -78,7 +78,7 @@ type Message[T comparable] struct {
 	message T
 	ctx     context.Context
 	dlq     *DeadLetterQueue[T]
-	log     chan T
+	log     chan string
 	wg      *sync.WaitGroup
 }
 
@@ -89,9 +89,12 @@ type Worker[T comparable] struct {
 
 type WorkerPool[T comparable] struct {
 	Workers []Worker[T]
+	Alive   bool
 }
 
 func (wp *WorkerPool[T]) Cleanup() {
+	wp.Alive = false
+
 	for _, w := range wp.Workers {
 		close(w.Queue)
 	}
@@ -107,7 +110,7 @@ func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 		})
 		go messageProcessor(w[i].Queue)
 	}
-	wp := WorkerPool[T]{Workers: w}
+	wp := WorkerPool[T]{Workers: w, Alive: true}
 	return &wp, nil
 }
 
@@ -122,7 +125,7 @@ func messageProcessor[T comparable](ch chan *Message[T]) {
 }
 
 // process respects the context deadline
-func process[T comparable](ctx context.Context, m T, l chan T, d time.Duration, retry int) error {
+func process[T comparable](ctx context.Context, m T, l chan string, d time.Duration, retry int) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -139,7 +142,8 @@ func process[T comparable](ctx context.Context, m T, l chan T, d time.Duration, 
 		return process(ctx, m, l, d*2, retry+1)
 	}
 
-	l <- m
+	l <- fmt.Sprintf("Processed message: %v", m)
+
 	return nil
 }
 
@@ -147,7 +151,7 @@ type Request[T comparable] struct {
 	Context    context.Context
 	WorkerPool *WorkerPool[T]
 	DLQueue    *DeadLetterQueue[T]
-	Log        chan T
+	Log        chan string
 }
 
 // ProcessResources processes a slice of resources concurrently using a WorkerPool
@@ -160,6 +164,19 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 	defer cancel()
 	defer close(r.Log)
 
+	// goroutine simulates autoscaling controller
+	go func() {
+		select {
+		case <-c.Done(): // defer cancel()
+			return
+		default:
+			time.Sleep(2 * time.Second)
+			r.WorkerPool.ScaleUp(2, cap(r.Log))
+			time.Sleep(2 * time.Second)
+			r.WorkerPool.ScaleDown(2)
+		}
+	}()
+
 	for _, m := range s {
 		wg.Add(1)
 		// Random dispatcher fans out jobs evenly to available workers (Fan-Out)
@@ -167,6 +184,7 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 		r.WorkerPool.Workers[i].Queue <- &Message[T]{m, c, r.DLQueue, r.Log, wg}
 	}
 	wg.Wait()
+
 	/*
 		If the context deadline is hit during wg.Wait():
 		The context (c) is automatically canceled by Go’s runtime.
@@ -180,33 +198,34 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 
 // ScaleUp dynamically adds n workers to the pool, each with buffer capacity c
 func (wp *WorkerPool[T]) ScaleUp(n, c int) {
-	wc := len(wp.Workers)
-	for i := range n {
-		wp.Workers = append(wp.Workers, Worker[T]{
-			Id:    i + wc,
-			Queue: make(chan *Message[T], c),
-		})
+	if wp.Alive {
+		for i := range n {
+			wp.Workers = append(wp.Workers, Worker[T]{
+				Id:    i + len(wp.Workers),
+				Queue: make(chan *Message[T], c),
+			})
+		}
+		fmt.Printf("Added %d workers to the pool\n", n)
 	}
 }
 
-// ScaleDown dynamically removes n workers from the pool by closing their channels
-// Asynchronous behavior: Only closed or empty channels can be removed (waits for non-empty channels to drain)
-func (wp *WorkerPool[T]) ScaleDown(n int) error {
+// ScaleDown dynamically removes n workers from the pool by closing their channels.
+// Asynchronous behavior: Only closed or empty channels can be removed (waits for non-empty channels to drain).
+func (wp *WorkerPool[T]) ScaleDown(n int) {
 	if n > len(wp.Workers) {
-		return fmt.Errorf("%d is greater than the number of workers: %d. Use WorkerPool.Cleanup() instead", n, len(wp.Workers))
+		fmt.Printf("%d is greater than the number of workers: %d. Use WorkerPool.Cleanup() instead", n, len(wp.Workers))
 	}
 	closed := 0
-	go func() {
-		for closed < n {
-			for _, w := range wp.Workers {
-				if len(w.Queue) > 0 {
-					time.Sleep(1 * time.Second)
-					continue
-				}
+	for wp.Alive && closed < n {
+		for _, w := range wp.Workers {
+			if len(w.Queue) > 0 {
+				time.Sleep(1 * time.Second)
+				continue
+			} else if _, ok := <-w.Queue; ok {
 				close(w.Queue)
 				closed++
 			}
 		}
-	}()
-	return nil
+		fmt.Printf("Removed %d workers from the pool by closing their channels\n", closed)
+	}
 }
