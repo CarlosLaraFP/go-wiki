@@ -88,8 +88,17 @@ type Worker[T comparable] struct {
 }
 
 type WorkerPool[T comparable] struct {
+	sync.RWMutex
 	Workers []Worker[T]
 	Alive   bool
+}
+
+func (wp *WorkerPool[T]) Dispatch(m *Message[T]) {
+	wp.Lock()
+	defer wp.Unlock()
+	// Random dispatcher fans out jobs evenly to available workers (Fan-Out)
+	i := rand.Intn(len(wp.Workers))
+	wp.Workers[i].Queue <- m
 }
 
 func (wp *WorkerPool[T]) Cleanup() {
@@ -170,6 +179,7 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 		case <-c.Done(): // defer cancel()
 			return
 		default:
+			// TODO: Make sleep a percentage of remaining context time
 			time.Sleep(2 * time.Second)
 			r.WorkerPool.ScaleUp(2, cap(r.Log))
 			time.Sleep(2 * time.Second)
@@ -179,9 +189,7 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 
 	for _, m := range s {
 		wg.Add(1)
-		// Random dispatcher fans out jobs evenly to available workers (Fan-Out)
-		i := rand.Intn(len(r.WorkerPool.Workers))
-		r.WorkerPool.Workers[i].Queue <- &Message[T]{m, c, r.DLQueue, r.Log, wg}
+		r.WorkerPool.Dispatch(&Message[T]{m, c, r.DLQueue, r.Log, wg})
 	}
 	wg.Wait()
 
@@ -199,11 +207,16 @@ func ProcessResources[T comparable](r Request[T], s []T) {
 // ScaleUp dynamically adds n workers to the pool, each with buffer capacity c
 func (wp *WorkerPool[T]) ScaleUp(n, c int) {
 	if wp.Alive {
+		wp.Lock()
+		defer wp.Unlock()
+		l := len(wp.Workers)
+
 		for i := range n {
 			wp.Workers = append(wp.Workers, Worker[T]{
-				Id:    i + len(wp.Workers),
+				Id:    i + l,
 				Queue: make(chan *Message[T], c),
 			})
+			go messageProcessor(wp.Workers[i+l].Queue)
 		}
 		fmt.Printf("Added %d workers to the pool\n", n)
 	}
@@ -212,16 +225,24 @@ func (wp *WorkerPool[T]) ScaleUp(n, c int) {
 // ScaleDown dynamically removes n workers from the pool by closing their channels.
 // Asynchronous behavior: Only closed or empty channels can be removed (waits for non-empty channels to drain).
 func (wp *WorkerPool[T]) ScaleDown(n int) {
+	wp.Lock()
+	defer wp.Unlock()
 	if n > len(wp.Workers) {
 		fmt.Printf("%d is greater than the number of workers: %d. Use WorkerPool.Cleanup() instead", n, len(wp.Workers))
+		return
 	}
 	closed := 0
 	for wp.Alive && closed < n {
 		for _, w := range wp.Workers {
-			if len(w.Queue) > 0 {
-				time.Sleep(1 * time.Second)
-				continue
-			} else if _, ok := <-w.Queue; ok {
+			select {
+			case _, ok := <-w.Queue: // non-blocking check
+				if !ok {
+					// Channel is already closed
+					closed++
+				}
+				// Channel still active; do nothing
+			default:
+				// Closing the channel and letting it drain on its own if it still contains messages
 				close(w.Queue)
 				closed++
 			}
