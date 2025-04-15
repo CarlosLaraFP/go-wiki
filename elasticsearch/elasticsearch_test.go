@@ -1,1 +1,1 @@
-package elasticsearch
+package elastic

@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	c "go-wiki/concurrency"
-	"go-wiki/elasticsearch"
-	"log"
-	"strconv"
 
 	//i "go-wiki/interfaces"
 	//"net/http"
@@ -43,38 +40,6 @@ func main() {
 
 	if len(dlq.Failed) > 0 {
 		fmt.Printf("%d messages failed to process", len(dlq.Failed))
-	}
-
-	// ElasticSearch
-	years := []int{2020, 2021, 2022, 2023, 2024, 2025}
-	//books := make([]*elasticsearch.Book, len(years))
-	// TODO: dependency injection
-	client, err := elasticsearch.CreateClient()
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
-	//defer client.ClosePointInTime()
-
-	for i, y := range years {
-		b := &elasticsearch.Book{
-			Title:  strconv.Itoa(i),
-			Author: strconv.Itoa(i + 1),
-			Price:  10.99,
-			Year:   y,
-			Rating: 5.0,
-			Genre:  "Action",
-		}
-		if err := b.Index(client); err != nil {
-			log.Printf("Failed to index book %d: %v", i, err)
-		}
-	}
-
-	if err := elasticsearch.SearchBooks(client, "Book 0"); err != nil {
-		log.Printf("Search failed: %v", err)
-	}
-
-	if err := elasticsearch.AggregateRatingsByGenre(client); err != nil {
-		log.Printf("Aggregation failed: %v", err)
 	}
 }
 

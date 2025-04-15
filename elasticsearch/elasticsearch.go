@@ -1,141 +1,132 @@
-package elasticsearch
+/*
+ElasticSearch distributed system from scratch using Go.
+An ES cluster hosts indices.
+Documents are stored in shards (physical partitions), and each index stores the shards.
+Shards also store inverted indices (for search), doc values (for aggregations), and metadata.
+An index represents a "category" of (related) documents.
+ES is disk-based with filesystem caching. Only hot data is kept in memory (OS page cache).
+A collection of documents can be retrieved by clients using an index (user-friendly category name, such as "books") and a query string.
+ES then fans out the query string to all shards to find the requested document(s).
+The results are fanned/merged into a single collection of results. If the result is too large, ES supports pagination.
+Every time a document is retrieved by a client, what is actually returned is a copy of the document, not the original.
+In Kubernetes:
+Since ES is disk-based, data must be persisted using PersistentVolumes, with each pod (shard) using a PersistentVolumeClaim.
+ES shard allocation handles recovery from PVs. Hot data is kept in memory.
+Rather than a Deployment (which creates a ReplicaSet), 1 StatefulSet is created per node role (e.g., data, master).
+Each StatefulSet Pod can host multiple shards (from different indices). This custom resource is managed by ECK Operator (not manual StatefulSets).
+For reliability, availability, and scalability, the pods in each StatefulSet can have anti-affinity specified to give each pod a chance to be scheduled on a different node.
+This strategy is useful when using EKS because nodes are distributed among availability zones, reducing the risk of AZ outages affecting the entire application.
+Shard rebalancing is expensive if using HPA. Therefore, VPA for StatefulSets is preferred; use Index Lifecycle Management (ILM) for auto-scaling indices.
+*/
+package elastic
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"strings"
-
-	es "github.com/elastic/go-elasticsearch/v9"
+	"hash/fnv"
+	"sync"
 )
 
-func CreateClient() (*es.Client, error) {
-	client, err := es.NewDefaultClient()
-	if err != nil {
-		return nil, fmt.Errorf("error creating ElasticSearch client: %w", err)
-	}
-	return client, nil
+// Core types =================================
+type Document struct {
+	ID    string         `json:"id"`
+	Index string         `json:"index"`
+	Body  map[string]any `json:"body"`
 }
 
-type Book struct {
-	Title  string  `json:"title"`
-	Author string  `json:"author"`
-	Price  float64 `json:"price"`
-	Year   int     `json:"year"`
-	Rating float64 `json:"rating"`
-	Genre  string  `json:"genre"`
+// In Kafka, this would be a partition
+type Shard struct {
+	ID       int
+	Data     map[string]Document // Storage
+	Inverted map[string][]string // Index: term -> docIDs
+	sync.RWMutex
 }
 
-func (b *Book) Index(es *es.Client) error {
-	data, err := json.Marshal(b)
-	if err != nil {
-		return fmt.Errorf("error marshaling book: %w", err)
-	}
-	res, err := es.Index(
-		"books",
-		strings.NewReader(string(data)),
-		es.Index.WithDocumentID(fmt.Sprintf("%d", b.Year)), // Using year as ID for uniqueness
-	)
-	if err != nil {
-		return fmt.Errorf("error indexing book: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error response from Elasticsearch: %s", res.String())
-	}
-
-	fmt.Println("Book indexed successfully!")
-	return nil
+// In Kafka, this would be a topic
+type Index struct {
+	Name   string
+	Shards []*Shard
 }
 
-func SearchBooks(es *es.Client, query string) error {
-	var buf bytes.Buffer
-	searchQuery := map[string]any{
-		"query": map[string]any{
-			"match": map[string]any{
-				"title": query,
-			},
-		},
-	}
-	if err := json.NewEncoder(&buf).Encode(searchQuery); err != nil {
-		return fmt.Errorf("error encoding query: %w", err)
+// Cluster simulation =========================
+var (
+	indices    = make(map[string]*Index)
+	shardCount = 3
+)
+
+// NewIndex creates an index with shards
+func NewIndex(name string) *Index {
+	idx := &Index{
+		Name:   name,
+		Shards: make([]*Shard, shardCount),
 	}
 
-	res, err := es.Search(
-		es.Search.WithIndex("books"),
-		es.Search.WithBody(&buf),
-	)
-	if err != nil {
-		return fmt.Errorf("error executing search: %w", err)
+	for i := range shardCount {
+		idx.Shards[i] = &Shard{
+			ID:       i,
+			Data:     make(map[string]Document),
+			Inverted: make(map[string][]string),
+		}
 	}
-	defer res.Body.Close()
+	indices[name] = idx
+	return idx
+}
 
-	if res.IsError() {
-		return fmt.Errorf("error response from Elasticsearch: %s", res.String())
+// Hash routing (like our Kafka implementation) ========
+func getShard(id string) int {
+	h := fnv.New32a()
+	h.Write([]byte(id))
+	return int(h.Sum32()) % shardCount
+}
+
+// CRUD Operations ===========================
+func IndexDocument(doc Document) error {
+	idx, exists := indices[doc.Index]
+	if !exists {
+		idx = NewIndex(doc.Index)
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return fmt.Errorf("error parsing response: %w", err)
-	}
+	shard := idx.Shards[getShard(doc.ID)]
 
-	fmt.Println("Search results:")
-	hits := result["hits"].(map[string]interface{})["hits"].([]interface{})
-	for _, hit := range hits {
-		source := hit.(map[string]interface{})["_source"]
-		fmt.Printf("- %+v\n", source)
+	shard.Lock()
+	defer shard.Unlock()
+
+	// Store document
+	shard.Data[doc.ID] = doc
+
+	// Update inverted index
+	for field, value := range doc.Body {
+		term := fmt.Sprintf("%s:%v", field, value)
+		shard.Inverted[term] = append(shard.Inverted[term], doc.ID)
 	}
 
 	return nil
 }
 
-func AggregateRatingsByGenre(es *es.Client) error {
-	var buf bytes.Buffer
-	aggQuery := map[string]interface{}{
-		"aggs": map[string]interface{}{
-			"genres": map[string]interface{}{
-				"terms": map[string]interface{}{
-					"field": "genre",
-				},
-				"aggs": map[string]interface{}{
-					"avg_rating": map[string]interface{}{
-						"avg": map[string]interface{}{
-							"field": "rating",
-						},
-					},
-				},
-			},
-		},
-	}
-	if err := json.NewEncoder(&buf).Encode(aggQuery); err != nil {
-		return fmt.Errorf("error encoding aggregation query: %w", err)
+func Search(index, query string) ([]Document, error) {
+	idx, exists := indices[index]
+	if !exists {
+		return nil, fmt.Errorf("index not found")
 	}
 
-	res, err := es.Search(
-		es.Search.WithIndex("books"),
-		es.Search.WithBody(&buf),
-	)
-	if err != nil {
-		return fmt.Errorf("error executing aggregation: %w", err)
-	}
-	defer res.Body.Close()
+	var results []Document
+	term := parseQuery(query) // Simplified
 
-	if res.IsError() {
-		return fmt.Errorf("error response from Elasticsearch: %s", res.String())
-	}
-
-	var result map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return fmt.Errorf("error parsing aggregation response: %w", err)
+	// Search across all shards
+	for _, shard := range idx.Shards {
+		shard.RLock()
+		if docIDs, exists := shard.Inverted[term]; exists {
+			for _, id := range docIDs {
+				results = append(results, shard.Data[id])
+			}
+		}
+		shard.RUnlock()
 	}
 
-	fmt.Println("Aggregation results:")
-	genres := result["aggregations"].(map[string]interface{})["genres"].(map[string]interface{})["buckets"].([]interface{})
-	for _, genre := range genres {
-		g := genre.(map[string]interface{})
-		fmt.Printf("- Genre: %s, Avg Rating: %f\n", g["key"], g["avg_rating"].(map[string]interface{})["value"])
-	}
+	return results, nil
+}
 
-	return nil
+// Helper functions ==========================
+func parseQuery(q string) string {
+	// Simplified - real ES would parse properly
+	return q
 }
