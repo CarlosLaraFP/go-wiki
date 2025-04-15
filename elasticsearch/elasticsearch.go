@@ -4,11 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
-	es "github.com/elastic/go-elasticsearch/v8"
+	es "github.com/elastic/go-elasticsearch/v9"
 )
+
+func CreateClient() (*es.Client, error) {
+	client, err := es.NewDefaultClient()
+	if err != nil {
+		return nil, fmt.Errorf("error creating ElasticSearch client: %w", err)
+	}
+	return client, nil
+}
 
 type Book struct {
 	Title  string  `json:"title"`
@@ -19,43 +26,71 @@ type Book struct {
 	Genre  string  `json:"genre"`
 }
 
-func (b *Book) Index(es *es.Client) {
-	data, _ := json.Marshal(b)
+func (b *Book) Index(es *es.Client) error {
+	data, err := json.Marshal(b)
+	if err != nil {
+		return fmt.Errorf("error marshaling book: %w", err)
+	}
 	res, err := es.Index(
 		"books",
 		strings.NewReader(string(data)),
-		es.Index.WithDocumentID("1"), // Optional ID
+		es.Index.WithDocumentID(fmt.Sprintf("%d", b.Year)), // Using year as ID for uniqueness
 	)
 	if err != nil {
-		log.Fatalf("Error indexing book: %s", err)
+		return fmt.Errorf("error indexing book: %w", err)
 	}
 	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("error response from Elasticsearch: %s", res.String())
+	}
+
 	fmt.Println("Book indexed successfully!")
+	return nil
 }
 
-func SearchBooks(es *es.Client, query string) {
+func SearchBooks(es *es.Client, query string) error {
 	var buf bytes.Buffer
-	searchQuery := map[string]interface{}{
-		"query": map[string]interface{}{
-			"match": map[string]interface{}{
+	searchQuery := map[string]any{
+		"query": map[string]any{
+			"match": map[string]any{
 				"title": query,
 			},
 		},
 	}
-	json.NewEncoder(&buf).Encode(searchQuery)
+	if err := json.NewEncoder(&buf).Encode(searchQuery); err != nil {
+		return fmt.Errorf("error encoding query: %w", err)
+	}
 
 	res, err := es.Search(
 		es.Search.WithIndex("books"),
 		es.Search.WithBody(&buf),
 	)
 	if err != nil {
-		log.Fatalf("Error searching: %s", err)
+		return fmt.Errorf("error executing search: %w", err)
 	}
 	defer res.Body.Close()
-	fmt.Println("Search results:", res.String())
+
+	if res.IsError() {
+		return fmt.Errorf("error response from Elasticsearch: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return fmt.Errorf("error parsing response: %w", err)
+	}
+
+	fmt.Println("Search results:")
+	hits := result["hits"].(map[string]interface{})["hits"].([]interface{})
+	for _, hit := range hits {
+		source := hit.(map[string]interface{})["_source"]
+		fmt.Printf("- %+v\n", source)
+	}
+
+	return nil
 }
 
-func AggregateRatingsByGenre(es *es.Client) {
+func AggregateRatingsByGenre(es *es.Client) error {
 	var buf bytes.Buffer
 	aggQuery := map[string]interface{}{
 		"aggs": map[string]interface{}{
@@ -73,15 +108,34 @@ func AggregateRatingsByGenre(es *es.Client) {
 			},
 		},
 	}
-	json.NewEncoder(&buf).Encode(aggQuery)
+	if err := json.NewEncoder(&buf).Encode(aggQuery); err != nil {
+		return fmt.Errorf("error encoding aggregation query: %w", err)
+	}
 
 	res, err := es.Search(
 		es.Search.WithIndex("books"),
 		es.Search.WithBody(&buf),
 	)
 	if err != nil {
-		log.Fatalf("Error aggregating: %s", err)
+		return fmt.Errorf("error executing aggregation: %w", err)
 	}
 	defer res.Body.Close()
-	fmt.Println("Aggregation results:", res.String())
+
+	if res.IsError() {
+		return fmt.Errorf("error response from Elasticsearch: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return fmt.Errorf("error parsing aggregation response: %w", err)
+	}
+
+	fmt.Println("Aggregation results:")
+	genres := result["aggregations"].(map[string]interface{})["genres"].(map[string]interface{})["buckets"].([]interface{})
+	for _, genre := range genres {
+		g := genre.(map[string]interface{})
+		fmt.Printf("- Genre: %s, Avg Rating: %f\n", g["key"], g["avg_rating"].(map[string]interface{})["value"])
+	}
+
+	return nil
 }
