@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -73,13 +74,13 @@ func (dlq *DeadLetterQueue[T]) Add(message T) {
 	dlq.Failed = append(dlq.Failed, message)
 }
 
-// fmt.Stringer
 type Job[T comparable] struct {
 	message T
 	ctx     context.Context
 	dlq     *DeadLetterQueue[T]
 	log     chan string
 	wg      *sync.WaitGroup
+	ctr     *atomic.Int32
 }
 
 type Worker[T comparable] struct {
@@ -89,6 +90,7 @@ type Worker[T comparable] struct {
 
 type WorkerPool[T comparable] struct {
 	sync.RWMutex
+	Jobs    *atomic.Int32
 	Workers []Worker[T]
 	Alive   bool
 }
@@ -99,6 +101,31 @@ func (wp *WorkerPool[T]) Dispatch(m *Job[T]) {
 	// Random dispatcher fans out jobs evenly to available workers (Fan-Out)
 	i := rand.Intn(len(wp.Workers))
 	wp.Workers[i].Queue <- m
+	wp.Jobs.Add(1)
+}
+
+// StartAutoscalerController simulates an autoscaling controller
+func (wp *WorkerPool[T]) StartAutoscalerController(ctx context.Context, cap int) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+		// TODO: Make sleep a percentage of remaining context time
+		time.Sleep(2 * time.Second)
+		wp.ScaleUp(2, cap)
+		time.Sleep(2 * time.Second)
+		_ = wp.ScaleDown(2)
+	}
+}
+
+// StartLogger prints the number of jobs in progress every d
+func (wp *WorkerPool[T]) StartLogger(d time.Duration) {
+	for wp.Alive {
+		time.Sleep(d)
+		wp.Lock()
+		fmt.Printf("%d jobs in progress\n", wp.Jobs.Load())
+		wp.Unlock()
+	}
 }
 
 func (wp *WorkerPool[T]) Cleanup() {
@@ -125,7 +152,9 @@ func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 		})
 		go messageProcessor(w[i].Queue)
 	}
-	wp := WorkerPool[T]{Workers: w, Alive: true}
+	wp := WorkerPool[T]{Jobs: &atomic.Int32{}, Workers: w, Alive: true}
+	wp.Jobs.Store(0)
+
 	return &wp, nil
 }
 
@@ -135,6 +164,7 @@ func messageProcessor[T comparable](ch chan *Job[T]) {
 			fmt.Println(err)
 			m.dlq.Add(m.message)
 		}
+		m.ctr.Add(-1)
 		m.wg.Done()
 	}
 }
@@ -163,39 +193,33 @@ func process[T comparable](ctx context.Context, m T, l chan string, d time.Durat
 }
 
 type Request[T comparable] struct {
-	Context    context.Context
-	WorkerPool *WorkerPool[T]
-	DLQueue    *DeadLetterQueue[T]
-	Log        chan string
+	Messages       []T
+	Context        context.Context
+	WorkerPool     *WorkerPool[T]
+	MaxParallelism int
+	DLQueue        *DeadLetterQueue[T]
+	Log            chan string
 }
 
-// ProcessResources processes a slice of resources concurrently using a WorkerPool
-// The whole process respects a context.Context timeout (e.g., 5 seconds).
+// ProcessRequest processes a slice of messages concurrently using a WorkerPool
+// The entire process respects a context.Context timeout (e.g., 5 seconds).
 // If the context is canceled (timeout hit), workers stop immediately.
 // The total time receiving from the Log also counts.
-func ProcessResources[T comparable](r Request[T], s []T) {
+func ProcessRequest[T comparable](r Request[T]) {
 	wg := &sync.WaitGroup{}
 	c, cancel := context.WithTimeout(r.Context, 5*time.Second)
 	defer cancel()
 	defer close(r.Log)
 
-	// goroutine simulates autoscaling controller
-	go func() {
-		select {
-		case <-c.Done(): // defer cancel()
-			return
-		default:
-			// TODO: Make sleep a percentage of remaining context time
-			time.Sleep(2 * time.Second)
-			r.WorkerPool.ScaleUp(2, cap(r.Log))
-			time.Sleep(2 * time.Second)
-			_ = r.WorkerPool.ScaleDown(2)
-		}
-	}()
+	go r.WorkerPool.StartAutoscalerController(c, cap(r.Log))
+	go r.WorkerPool.StartLogger(500 * time.Millisecond)
 
-	for _, m := range s {
+	for _, m := range r.Messages {
+		for r.WorkerPool.Jobs.Load() >= int32(r.MaxParallelism) {
+			time.Sleep(50 * time.Millisecond)
+		}
 		wg.Add(1)
-		r.WorkerPool.Dispatch(&Job[T]{m, c, r.DLQueue, r.Log, wg})
+		r.WorkerPool.Dispatch(&Job[T]{m, c, r.DLQueue, r.Log, wg, r.WorkerPool.Jobs})
 	}
 	wg.Wait()
 	/*

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,7 +63,9 @@ func TestMessageProcessor(t *testing.T) {
 	defer cancel()
 	wg := &sync.WaitGroup{}
 	dlq := &DeadLetterQueue[float64]{}
-	m := &Job[float64]{3.14159, ctx, dlq, log, wg}
+	ctr := &atomic.Int32{}
+	ctr.Store(0)
+	m := &Job[float64]{3.14159, ctx, dlq, log, wg, ctr}
 	ch := make(chan *Job[float64])
 	go messageProcessor(ch)
 	time.Sleep(200 * time.Millisecond)
@@ -71,7 +74,7 @@ func TestMessageProcessor(t *testing.T) {
 	wg.Wait()
 }
 
-func TestProcessResourceIds(t *testing.T) {
+func TestProcessRequests(t *testing.T) {
 	wp, err := NewWorkerPool[string](5, 10)
 	assert.NoError(t, err)
 	defer wp.Cleanup()
@@ -84,12 +87,14 @@ func TestProcessResourceIds(t *testing.T) {
 		ids = append(ids, fmt.Sprintf("event-%d", i))
 	}
 	request := Request[string]{
-		Context:    context.Background(),
-		WorkerPool: wp,
-		DLQueue:    dlq,
-		Log:        make(chan string, capacity), // no capacity == deadlock
+		Messages:       ids,
+		Context:        context.Background(),
+		WorkerPool:     wp,
+		MaxParallelism: 10, // unspecified == no jobs get processed (hangs indefinitely)
+		DLQueue:        dlq,
+		Log:            make(chan string, capacity), // no capacity == deadlock
 	}
-	ProcessResources(request, ids)
+	ProcessRequest(request)
 
 	for r := range request.Log {
 		fmt.Println(r)
@@ -107,13 +112,15 @@ func TestProcessResourceIds(t *testing.T) {
 	}
 
 	new := Request[string]{
-		Context:    ctx,
-		WorkerPool: wp,
-		DLQueue:    dlq,
-		Log:        make(chan string, capacity), // no capacity == deadlock
+		Messages:       copy,
+		Context:        ctx,
+		WorkerPool:     wp,
+		MaxParallelism: 10, // unspecified == no jobs get processed (hangs indefinitely)
+		DLQueue:        dlq,
+		Log:            make(chan string, capacity), // no capacity == deadlock
 	}
 
-	ProcessResources(new, copy)
+	ProcessRequest(new)
 	assert.NotEmpty(t, dlq.Failed)
 }
 

@@ -27,12 +27,14 @@ func main() {
 	}
 
 	request := c.Request[string]{
-		Context:    context.Background(),
-		WorkerPool: wp,
-		DLQueue:    dlq,
-		Log:        make(chan string, capacity),
+		Messages:       ids,
+		Context:        context.Background(),
+		WorkerPool:     wp,
+		MaxParallelism: 10,
+		DLQueue:        dlq,
+		Log:            make(chan string, capacity),
 	}
-	c.ProcessResources(request, ids)
+	c.ProcessRequest(request)
 
 	for r := range request.Log {
 		fmt.Println(r)
