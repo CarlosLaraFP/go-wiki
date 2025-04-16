@@ -14,6 +14,7 @@ Since ES is disk-based, data must be persisted using PersistentVolumes, with eac
 ES shard allocation handles recovery from PVs. Hot data is kept in memory.
 Rather than a Deployment (which creates a ReplicaSet), 1 StatefulSet is created per node role (e.g., data, master).
 Each StatefulSet Pod can host multiple shards (from different indices). This custom resource is managed by ECK Operator (not manual StatefulSets).
+Each shard has N replicas (configured per index). Kubernetes ensures replicas land on different nodes via anti-affinity.
 For reliability, availability, and scalability, the pods in each StatefulSet can have anti-affinity specified to give each pod a chance to be scheduled on a different node.
 This strategy is useful when using EKS because nodes are distributed among availability zones, reducing the risk of AZ outages affecting the entire application.
 Shard rebalancing is expensive if using HPA. Therefore, VPA for StatefulSets is preferred; use Index Lifecycle Management (ILM) for auto-scaling indices.
