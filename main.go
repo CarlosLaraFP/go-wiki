@@ -30,7 +30,7 @@ func main() {
 		Messages:       ids,
 		Context:        context.Background(),
 		WorkerPool:     wp,
-		MaxParallelism: 10,
+		MaxParallelism: 10, // rate-limiting, especially in a multi-tenant environment
 		DLQueue:        dlq,
 		Log:            make(chan string, capacity),
 	}

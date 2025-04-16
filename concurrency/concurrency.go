@@ -122,9 +122,7 @@ func (wp *WorkerPool[T]) StartAutoscalerController(ctx context.Context, cap int)
 func (wp *WorkerPool[T]) StartLogger(d time.Duration) {
 	for wp.Alive {
 		time.Sleep(d)
-		wp.Lock()
 		fmt.Printf("%d jobs in progress\n", wp.Jobs.Load())
-		wp.Unlock()
 	}
 }
 
