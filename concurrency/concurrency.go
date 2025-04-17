@@ -128,6 +128,7 @@ func (wp *WorkerPool[T]) StartLogger(d time.Duration) {
 
 func (wp *WorkerPool[T]) Cleanup() {
 	wp.Alive = false
+	wp.Jobs.Store(0)
 
 	for _, w := range wp.Workers {
 		select {
