@@ -42,7 +42,12 @@ func TestCleanup(t *testing.T) {
 }
 
 func TestProcess(t *testing.T) {
-	ch := make(chan string, 10)
+	ch := make(chan string, 100)
+	// Start a goroutine to drain the channel
+	go func() {
+		for range ch {
+		} // Discard all messages
+	}()
 	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 	err := process(ctx, 100, ch, time.Millisecond*250, 0)
 	assert.NoError(t, err)

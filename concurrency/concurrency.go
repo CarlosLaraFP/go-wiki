@@ -157,7 +157,8 @@ func NewWorkerPool[T comparable](n, c int) (*WorkerPool[T], error) {
 	return &wp, nil
 }
 
-func messageProcessor[T comparable](ch chan *Job[T]) {
+// messageProcessor accepts a receive-only channel of Jobs to process
+func messageProcessor[T comparable](ch <-chan *Job[T]) {
 	for m := range ch {
 		if err := process(m.ctx, m.message, m.log, time.Millisecond*200, 1); err != nil {
 			fmt.Println(err)
@@ -168,8 +169,8 @@ func messageProcessor[T comparable](ch chan *Job[T]) {
 	}
 }
 
-// process respects the context deadline
-func process[T comparable](ctx context.Context, m T, l chan string, d time.Duration, retry int) error {
+// process accepts a send-only channel and respects the context deadline
+func process[T comparable](ctx context.Context, m T, l chan<- string, d time.Duration, retry int) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
